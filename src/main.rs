@@ -1,6 +1,8 @@
 #![allow(unused_assignments)]
 
-use sdl2::{pixels::Color, rect::Rect, render::Canvas};
+use std::io::Read;
+
+use sdl2::{pixels::Color, rect::Rect, render::Canvas, image::LoadTexture};
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Coord(char, usize);
 
@@ -12,9 +14,9 @@ pub enum FieldType {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Player {
-    Green,
-    Red,
-    Yellow
+    Red = 0,
+    Green = 1,
+    Yellow = 2,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -27,7 +29,8 @@ pub enum PieceType {
     King
 }
 
-// pub const PIECE_LETTERS: [char] = ['p','r','n','b','q','k'];
+pub const PIECE_LETTERS: [char; 6] = ['p','r','n','b','q','k'];
+pub const COLOR_LETTERS: [char; 3] = ['r','g','y'];
 
 #[derive(Clone, Copy, Debug)]
 pub struct Piece {
@@ -67,33 +70,33 @@ fn cadd(c: char, i: usize) -> char{
 impl Section {
     pub fn new(f: char, r: usize, inverse_colors: bool,
                pts: fn(i32,i32)->[(i32,i32);4]) -> Self {
-        let tp1 = if inverse_colors { FieldType::BLACK  } else
-        { FieldType::WHITE  };
+        let tp1 = if inverse_colors { FieldType::BLACK  }
+        else { FieldType::WHITE };
 
-        let tp2 = if ! inverse_colors { FieldType::BLACK  } else
-        { FieldType::WHITE  };
+        let tp2 = if ! inverse_colors { FieldType::BLACK  }
+        else { FieldType::WHITE };
 
         Self {
             points: pts,
             fields: [[
                 Field::new(f, r, tp2),
+                Field::new(f, r+1, tp1),
+                Field::new(f, r+2, tp2),
+                Field::new(f, r+3, tp1),
+            ],[
                 Field::new(cadd(f, 1), r, tp1),
-                Field::new(cadd(f, 2), r, tp2),
-                Field::new(cadd(f, 3), r, tp1),
-            ],[
-                Field::new(f, r+1, tp1),
                 Field::new(cadd(f, 1), r+1, tp2),
-                Field::new(cadd(f, 2), r+1, tp1),
-                Field::new(cadd(f, 3), r+1, tp2),
-            ],[
-                Field::new(f, r+1, tp2),
                 Field::new(cadd(f, 1), r+2, tp1),
-                Field::new(cadd(f, 2), r+2, tp2),
-                Field::new(cadd(f, 3), r+2, tp1),
-            ],[
-                Field::new(f, r+1, tp1),
                 Field::new(cadd(f, 1), r+3, tp2),
+            ],[
+                Field::new(cadd(f, 2), r, tp2),
+                Field::new(cadd(f, 2), r+1, tp1),
+                Field::new(cadd(f, 2), r+2, tp2),
                 Field::new(cadd(f, 2), r+3, tp1),
+            ],[
+                Field::new(cadd(f, 3), r, tp1),
+                Field::new(cadd(f, 3), r+1, tp2),
+                Field::new(cadd(f, 3), r+2, tp1),
                 Field::new(cadd(f, 3), r+3, tp2),
             ]],
             start_file: f,
@@ -128,7 +131,7 @@ impl Board {
         }
     }
 
-    fn get_field<'a>(&'a mut self, file: char, rank: usize) -> Option<&'a mut Field> {
+    fn get_field(&mut self, file: char, rank: usize) -> Option<&mut Field> {
         for s in &mut self.sections {
             for r in &mut s.fields {
                 for f in r.iter_mut() {
@@ -144,14 +147,16 @@ impl Board {
     }
 
     fn place_pieces_left(&mut self, rank: usize,
-                         start_file: char, is_inverted: bool,
+                         start_file: char, #[allow(unused_variables)] is_inverted: bool,
                          player: Player) {
-        let field = self.get_field(start_file, rank).unwrap();
-        field.piece = Some(Piece {
-            typ: PieceType::Rook,
-            player,
-        });
-        println!("FIELD: {field:?}");
+
+        for f in start_file .. cadd(start_file, 4) {
+            let field = self.get_field(f, rank).unwrap();
+            field.piece = Some(Piece {
+                typ: PieceType::Rook,
+                player,
+            });
+        }
     }
 
     pub fn place_pieces(&mut self) {
@@ -220,7 +225,7 @@ fn fill_quadrilateral<T: sdl2::render::RenderTarget>
 }
 
 
-fn main_loop(board: Board) {
+fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
     let ctx = sdl2::init().unwrap();
     let vid = ctx.video().unwrap();
 
@@ -240,6 +245,8 @@ fn main_loop(board: Board) {
     let font = ttf.load_font("./FiraCode.ttf", 13).unwrap();
 
     let texture_creator = canvas.texture_creator();
+
+    sdl2::image::init(sdl2::image::InitFlag::PNG).unwrap();
 
     'running: loop {
         canvas.set_draw_color(Color::WHITE);
@@ -309,9 +316,12 @@ fn main_loop(board: Board) {
                     let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
                     let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
 
-                    let st = format!("{}{}", ((s.start_file as u8 + x as u8) as char)
+                    let minx = points[0].0.min(points[1].0).min(points[2].0).min(points[3].0);
+                    let maxx = points[0].0.max(points[1].0).max(points[2].0).max(points[3].0);
+
+                    let st = format!("{}{}", ((s.start_file as u8 + y as u8) as char)
                                      .to_uppercase(),
-                                     s.start_rank as i32 + y as i32);
+                                     s.start_rank as i32 + x as i32);
 
                     let surf = font.render(&st)
                         .solid(if f.typ == FieldType::BLACK {
@@ -327,7 +337,17 @@ fn main_loop(board: Board) {
                     canvas.copy(&text, None, Some(target)).unwrap();
 
                     if let Some(p) = f.piece {
-                        println!("Piece: {p:?}");
+                        let color = p.player as usize;
+                        let piece = p.typ as usize;
+
+                        let texture = &textures[color][piece];
+                        let text = texture_creator.load_texture_bytes(&texture.data).unwrap();
+
+                        let w = (maxx - minx) * 2 / 3;
+                        let h = (maxx - minx) * 2 / 3;
+
+                        let target = Rect::new(mx - w / 2, my - h / 2, w as u32, h as u32);
+                        canvas.copy(&text, None, Some(target)).unwrap();
                     }
                 }
             }
@@ -336,9 +356,35 @@ fn main_loop(board: Board) {
     }
 }
 
+#[derive(Debug)]
+pub struct Image {
+    pub data: Vec<u8>,
+}
+
+fn load_textures() -> std::io::Result<Vec<Vec<Image>>> {
+    let mut vec = vec![];
+    for c in COLOR_LETTERS {
+        let mut inner_vec = vec![];
+        for p in PIECE_LETTERS {
+            let mut f = std::fs::File::open(&format!("./assets/{p}{c}.png"))?;
+            let mut data = vec![];
+            f.read_to_end(&mut data)?;
+
+            inner_vec.push(Image {
+                data,
+            });
+        }
+        vec.push(inner_vec);
+    }
+    Ok(vec)
+}
+
 fn main() {
     let mut board = Board::new();
     board.place_pieces();
+
+    let textures = load_textures().unwrap();
+
 //    println!("Board: {board:#?}");
-    main_loop(board);
+    main_loop(board, textures);
 }
