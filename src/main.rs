@@ -107,7 +107,8 @@ impl Section {
 
 #[derive(Debug)]
 struct Board {
-    sections: [Section; 6]
+    sections: [Section; 6],
+    current_player: Player,
 }
 
 impl Board {
@@ -128,6 +129,7 @@ impl Board {
         ];
         Board {
             sections: s,
+            current_player: Player::Red,
         }
     }
 
@@ -146,21 +148,55 @@ impl Board {
         None
     }
 
-    fn place_pieces_left(&mut self, rank: usize,
-                         start_file: char, #[allow(unused_variables)] is_inverted: bool,
-                         player: Player) {
+    fn place_pieces_half(&mut self, rank: usize,
+                         start_file: char, mut invf: bool, invr: bool,
+                         right: bool, player: Player) {
 
-        for f in start_file .. cadd(start_file, 4) {
-            let field = self.get_field(f, rank).unwrap();
-            field.piece = Some(Piece {
-                typ: PieceType::Rook,
-                player,
-            });
+        if right {
+            invf ^= true;
+        }
+
+        self.get_field(cadd(start_file,
+                            if invf {3} else {0}), rank).unwrap()
+                                .piece = Some(Piece {
+                                    typ: PieceType::Rook,
+                                    player,
+                                });
+        self.get_field(cadd(start_file, if invf {2} else {1}), rank).unwrap()
+                                .piece = Some(Piece {
+                                    typ: PieceType::Knight,
+                                    player,
+                                });
+        self.get_field(cadd(start_file, if invf {1} else {2}), rank).unwrap()
+                                .piece = Some(Piece {
+                                    typ: PieceType::Bishop,
+                                    player,
+                                });
+        self.get_field(cadd(start_file, if invf {0} else {3}), rank).unwrap()
+                                .piece = Some(Piece {
+                                    typ: if right {PieceType::King} else {PieceType::Queen},
+                                    player,
+                                });
+
+        for a in 0 .. 4 {
+            self.get_field(cadd(start_file,
+                a), if invr {rank-1} else {rank+1}) .unwrap()
+                        .piece = Some(Piece {
+                            typ: PieceType::Pawn,
+                            player,
+                        });
         }
     }
 
     pub fn place_pieces(&mut self) {
-        self.place_pieces_left(1, 'a', false, Player::Red);
+        self.place_pieces_half( 1, 'a', false, false, false, Player::Red);
+        self.place_pieces_half( 1, 'e', false, false, true,  Player::Red);
+
+        self.place_pieces_half( 8, 'i', true,  true, false, Player::Green);
+        self.place_pieces_half( 8, 'a', true,  true, true, Player::Green);
+
+        self.place_pieces_half(12, 'e', true,  true, false, Player::Yellow);
+        self.place_pieces_half(12, 'i', false,  true, true,  Player::Yellow);
     }
 }
 
@@ -287,6 +323,8 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
                 for x in 0 .. 4 {
                     let mut points = [(0, 0); 4];
 
+                    let coords = s.get_coords(x, y);
+
                     for a in 0 .. 2 {
                         for b in 0 .. 2 {
                             let xfrac = (x + a) as f32 / 4.0;
@@ -316,12 +354,9 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
                     let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
                     let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
 
-                    let minx = points[0].0.min(points[1].0).min(points[2].0).min(points[3].0);
-                    let maxx = points[0].0.max(points[1].0).max(points[2].0).max(points[3].0);
-
-                    let st = format!("{}{}", ((s.start_file as u8 + y as u8) as char)
+                    let st = format!("{}{}", ((s.start_file as u8 + x as u8) as char)
                                      .to_uppercase(),
-                                     s.start_rank as i32 + x as i32);
+                                     s.start_rank as i32 + y as i32);
 
                     let surf = font.render(&st)
                         .solid(if f.typ == FieldType::BLACK {
@@ -343,8 +378,8 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
                         let texture = &textures[color][piece];
                         let text = texture_creator.load_texture_bytes(&texture.data).unwrap();
 
-                        let w = (maxx - minx) * 2 / 3;
-                        let h = (maxx - minx) * 2 / 3;
+                        let w = height / 6;
+                        let h = w;
 
                         let target = Rect::new(mx - w / 2, my - h / 2, w as u32, h as u32);
                         canvas.copy(&text, None, Some(target)).unwrap();
@@ -382,7 +417,6 @@ fn load_textures() -> std::io::Result<Vec<Vec<Image>>> {
 fn main() {
     let mut board = Board::new();
     board.place_pieces();
-
     let textures = load_textures().unwrap();
 
 //    println!("Board: {board:#?}");
