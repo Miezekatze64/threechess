@@ -1,9 +1,9 @@
-#![allow(unused_assignments)]
+#![allow(unused)]
 
 use std::io::Read;
 
 use sdl2::{pixels::Color, rect::Rect, render::Canvas, image::LoadTexture, mouse::MouseButton};
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Coord(char, usize);
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +45,69 @@ pub struct Field {
     pub piece: Option<Piece>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    ForwardRed,
+    ForwardYellow,
+}
+
+impl Direction {
+    pub fn next(&self, start: &Field, board: &Board, player: &Player) -> Option<Field> {
+        let (f, r) = match self {
+            Direction::ForwardRed => {
+                if start.coord.0 >= 'i' {
+                    return None;
+                }
+
+                if start.coord.1 == 8 || start.coord.1 == 12 {
+                    return None;
+                }
+
+                let r = if start.coord.1 == 4
+                    && start.coord.0 >= 'e' {
+                        9
+                    } else {
+                        start.coord.1 + 1
+                    };
+
+                (start.coord.0, r)
+            },
+            Direction::ForwardYellow => {
+                if start.coord.0 <= 'd' {
+                    return None;
+                }
+
+                if start.coord.1 == 8 || start.coord.1 == 1 {
+                    return None;
+                }
+
+                let r = if start.coord.1 == 9 {
+                    if start.coord.0 >= 'i' {
+                        5
+                    } else {
+                        4
+                    }
+                } else {
+                    if start.coord.1 >= 9 {
+                        start.coord.1 - 1
+                    } else if start.coord.1 >= 5 {
+                        start.coord.1 + 1
+                    } else {
+                        start.coord.1 - 1
+                    }
+                };
+
+                (start.coord.0, r)
+            },
+        };
+
+        // HACK: make board mutable, cause we are not mutating it..
+        // But function needs it.. better way: chnage function
+        unsafe {&mut *(board as *const _ as *mut Board)}
+        .get_field(f, r).cloned()
+    }
+}
+
 impl Field {
     pub fn new(a: char, b: usize, tp: FieldType) -> Self {
         Self {
@@ -53,9 +116,53 @@ impl Field {
             piece: None,
         }
     }
+
+    fn get_possible_moves(&self, board: &Board) -> Vec<Coord> {
+        let piece = self.piece.unwrap();
+        let player = piece.player;
+        let fields = board.get_fields();
+
+        let f = Board::get_fields(board);
+
+        match piece.typ {
+            PieceType::Pawn => todo!(),
+            PieceType::Rook => {
+                let mut fields = vec![];
+                for direction in [Direction::ForwardRed, Direction::ForwardYellow] {
+                    let mut field = Some(*self);
+                    while ({field = direction.next(&field.unwrap(), board, &player);
+                            field.is_some()}) {
+                        if field.is_none() {
+                            break;
+                        }
+
+                        if let Some(p) = field.unwrap().piece {
+                            if p.player != player {
+                                fields.push(field.unwrap().coord);
+                            }
+                            break;
+                        }
+
+                        fields.push(field.unwrap().coord);
+                    }
+                }
+
+                fields
+            },
+            PieceType::Knight => todo!(),
+            PieceType::Bishop => todo!(),
+            PieceType::Queen => {
+                fields.iter().map(|x| x.coord)
+                             .filter(|Coord(f, r)|
+                             *f == self.coord.0 || *r == self.coord.1)
+                    .collect()
+            },
+            PieceType::King => todo!(),
+        }
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Section {
     pub fields: [[Field; 4]; 4],
     pub start_file: char,
@@ -63,8 +170,12 @@ pub struct Section {
     points: fn (i32, i32) -> [(i32,i32); 4],
 }
 
-fn cadd(c: char, i: usize) -> char{
+fn cadd(c: char, i: usize) -> char {
     (c as u8 + i as u8) as char
+}
+
+fn csub(c: char, i: usize) -> char {
+    (c as u8 - i as u8) as char
 }
 
 impl Section {
@@ -155,10 +266,17 @@ impl Section {
     }
 }
 
-#[derive(Debug)]
-struct Board {
+#[derive(Debug, Clone, Copy)]
+pub struct Board {
     sections: [Section; 6],
     current_player: Player,
+    active_field: Option<Field>,
+}
+
+impl Default for Board {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Board {
@@ -180,21 +298,48 @@ impl Board {
         Board {
             sections: s,
             current_player: Player::Red,
+            active_field: None,
         }
     }
 
-    fn get_field(&mut self, file: char, rank: usize) -> Option<&mut Field> {
+    pub fn get_fields(&self) -> Vec<Field> {
+        self.sections.iter().flat_map(|x| x.fields
+                         .into_iter()
+                         .collect::<Vec<_>>()
+                         ).flatten()
+                          .collect::<Vec<_>>()
+    }
+
+    fn get_section_and_field(&mut self, file: char, rank: usize) -> Option<(Section, &mut Field)> {
         for s in &mut self.sections {
+            let sect = *s;
             for r in &mut s.fields {
                 for f in r.iter_mut() {
                     if f.coord.0 == file
                         && f.coord.1 == rank {
-                            return Some(f);
+                            return Some((sect, f));
                         }
                 }
             }
         }
 
+        None
+    }
+
+    fn get_field(&mut self, file: char, rank: usize) -> Option<&mut Field> {
+        self.get_section_and_field(file, rank).map(|(_, f)| f)
+    }
+
+    pub fn get_coords(&mut self, coord: Coord, ww: i32, wh: i32) -> Option<[(i32, i32); 4]> {
+        let (sect, _) = self.get_section_and_field(coord.0, coord.1)?;
+
+        for a in 0 .. 4 {
+            for b in 0 .. 4 {
+                if sect.fields[a][b].coord == coord {
+                    return Some(sect.get_coords(a, b, ww, wh));
+                }
+            }
+        }
         None
     }
 
@@ -207,11 +352,12 @@ impl Board {
         }
 
         self.get_field(cadd(start_file,
-                            if invf {3} else {0}), rank).unwrap()
+                            if invf {3} else {0}), if invr {rank-1} else {rank+1}).unwrap()
                                 .piece = Some(Piece {
                                     typ: PieceType::Rook,
                                     player,
                                 });
+return;
         self.get_field(cadd(start_file, if invf {2} else {1}), rank).unwrap()
                                 .piece = Some(Piece {
                                     typ: PieceType::Knight,
@@ -227,7 +373,6 @@ impl Board {
                                     typ: if right {PieceType::King} else {PieceType::Queen},
                                     player,
                                 });
-
         for a in 0 .. 4 {
             self.get_field(cadd(start_file,
                 a), if invr {rank-1} else {rank+1}) .unwrap()
@@ -236,6 +381,7 @@ impl Board {
                             player,
                         });
         }
+
     }
 
     pub fn place_pieces(&mut self) {
@@ -311,7 +457,7 @@ fn fill_quadrilateral<T: sdl2::render::RenderTarget>
 }
 
 
-fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
+fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
     let ctx = sdl2::init().unwrap();
     let vid = ctx.video().unwrap();
 
@@ -331,7 +477,6 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
     let font = ttf.load_font("./FiraCode.ttf", 13).unwrap();
 
     let texture_creator = canvas.texture_creator();
-
     sdl2::image::init(sdl2::image::InitFlag::PNG).unwrap();
 
     'running: loop {
@@ -341,19 +486,18 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
         let ww = canvas.window().size().0 as i32;
         let wh = canvas.window().size().1 as i32;
 
-
         for e in event_pump.poll_iter() {
             match e {
                 sdl2::event::Event::Quit { .. } => break 'running,
                 sdl2::event::Event::MouseButtonDown { mouse_btn, x, y, .. } => {
                     if mouse_btn == MouseButton::Left {
                         let mut pressed_field = None;
-                        'out: for s in &board.sections {
+                        'out: for s in &mut board.sections {
                             for yi in 0..4 {
                                 for xi in 0..4 {
                                     let coords = s.get_coords(xi, yi, ww, wh);
                                     if point_is_in_quadrilateral((x, y), &coords) {
-                                        pressed_field = Some(s.fields[xi][yi]);
+                                        pressed_field = Some(&mut s.fields[xi][yi]);
                                         break 'out;
                                     }
                                 }
@@ -361,10 +505,19 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
                         }
 
                         if let Some(f) = pressed_field {
-                            if let Some(p) = f.piece {
-                                if p.player == board.current_player {
-                                    println!("PIECE: {p:?}");
+                            if board.active_field.is_none() {
+                                if let Some(p) = f.piece {
+                                    if p.player == board.current_player {
+                                        board.active_field = Some(*f);
+                                    }
                                 }
+                            } else {
+                                f.piece = board.active_field.unwrap().piece;
+                                let af = board.active_field.unwrap().coord;
+                                let mut_field = board.get_field(af.0, af.1).unwrap();
+
+                                mut_field.piece = None;
+                                board.active_field = None;
                             }
                         }
 
@@ -379,7 +532,6 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
             for y in 0 .. 4 {
                 for x in 0 .. 4 {
                     let points = s.get_coords(x, y, ww, wh);
-
                     let f = s.fields[x][y];
 
                     if f.typ == FieldType::BLACK {
@@ -408,6 +560,43 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
                     let (w, h) = font.size_of(&st).unwrap();
                     let target = Rect::new(mx - w as i32 / 2, my - h as i32 / 2, w, h);
                     canvas.copy(&text, None, Some(target)).unwrap();
+                }
+            }
+        }
+
+        if let Some(f) = board.active_field {
+            let active_fields = f.get_possible_moves(&board);
+            let coords: Vec<_> = active_fields.iter().flat_map(|f| board.get_coords(*f, ww, wh)).collect();
+
+            for points in coords {
+                canvas.set_draw_color(
+                    [Color::RED, Color::GREEN, Color::YELLOW][board.current_player as usize]
+                );
+                let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
+                let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
+
+                let r = ww.min(wh) / 40;
+
+                for rx in (mx-r) ..= (mx+r) {
+                    for ry in (my-r) ..= (my+r) {
+                        let x = rx - mx;
+                        let y = ry - my;
+
+                        if x * x + y * y < r * r {
+                            canvas.draw_point((rx, ry)).unwrap();
+                        }
+                    }
+                }
+            }
+        }
+
+        for s in board.sections {
+            for y in 0 .. 4 {
+                for x in 0 .. 4 {
+                    let points = s.get_coords(x, y, ww, wh);
+                    let f = s.fields[x][y];
+                    let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
+                    let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
 
                     if let Some(p) = f.piece {
                         let color = p.player as usize;
