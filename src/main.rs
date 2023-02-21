@@ -2,7 +2,7 @@
 
 use std::io::Read;
 
-use sdl2::{pixels::Color, rect::Rect, render::Canvas, image::LoadTexture};
+use sdl2::{pixels::Color, rect::Rect, render::Canvas, image::LoadTexture, mouse::MouseButton};
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Coord(char, usize);
 
@@ -12,7 +12,7 @@ pub enum FieldType {
     BLACK,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Player {
     Red = 0,
     Green = 1,
@@ -102,6 +102,56 @@ impl Section {
             start_file: f,
             start_rank: r,
         }
+    }
+
+    fn get_radius_and_height(&self, ww: i32, wh: i32) -> (i32, i32) {
+        let radius: i32 = ((ww.min(wh) / 2) as f32 * 0.9) as _;
+        let height: i32 = ((3f32.sqrt() * radius as f32) / 2.0) as i32;
+
+        (radius, height)
+    }
+
+    fn get_coords(&self, x: usize, y: usize, mut ww: i32, mut wh: i32) -> [(i32, i32); 4] {
+        let (radius, height) = self.get_radius_and_height(ww, wh);
+
+
+        let offx = (ww - 2 * radius) / 2;
+        let offy = (wh - 2 * height) / 2;
+
+        ww -= offx;
+        wh -= offy;
+
+        let pts = (self.points)(radius, height);
+
+        let y0 = wh - pts[0].1;
+        let y1 = wh - pts[1].1;
+        let y2 = wh - pts[2].1;
+        let y3 = wh - pts[3].1;
+
+        let x0 = offx + pts[0].0;
+        let x1 = offx + pts[1].0;
+        let x2 = offx + pts[2].0;
+        let x3 = offx + pts[3].0;
+        let mut coords = [(0, 0); 4];
+
+        for a in 0 .. 2 {
+            for b in 0 .. 2 {
+                let xfrac = (x + a) as f32 / 4.0;
+                let yfrac = (y + b) as f32 / 4.0;
+
+                let xo0 = x0 as f32 + (x1 - x0) as f32 * xfrac;
+                let xo1 = x3 as f32 + (x2 - x3) as f32 * xfrac;
+                let rx = xo0 + (xo1 - xo0) * yfrac;
+
+                let yo0 = y0 as f32 + (y3 - y0) as f32 * yfrac;
+                let yo1 = y1 as f32 + (y2 - y1) as f32 * yfrac;
+                let ry = yo0 + (yo1 - yo0) * xfrac;
+
+                coords[2 * a as usize + b as usize] = (rx as i32, ry as i32);
+            }
+        }
+
+        coords
     }
 }
 
@@ -288,59 +338,47 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
         canvas.set_draw_color(Color::WHITE);
         canvas.clear();
 
+        let ww = canvas.window().size().0 as i32;
+        let wh = canvas.window().size().1 as i32;
+
+
         for e in event_pump.poll_iter() {
-            if let sdl2::event::Event::Quit { .. } = e {
-                break 'running;
+            match e {
+                sdl2::event::Event::Quit { .. } => break 'running,
+                sdl2::event::Event::MouseButtonDown { mouse_btn, x, y, .. } => {
+                    if mouse_btn == MouseButton::Left {
+                        let mut pressed_field = None;
+                        'out: for s in &board.sections {
+                            for yi in 0..4 {
+                                for xi in 0..4 {
+                                    let coords = s.get_coords(xi, yi, ww, wh);
+                                    if point_is_in_quadrilateral((x, y), &coords) {
+                                        pressed_field = Some(s.fields[xi][yi]);
+                                        break 'out;
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some(f) = pressed_field {
+                            if let Some(p) = f.piece {
+                                if p.player == board.current_player {
+                                    println!("PIECE: {p:?}");
+                                }
+                            }
+                        }
+
+                        println!("BUTTON {mouse_btn:?} at {x}/{y}");
+                    }
+                },
+                _ => (),
             }
         }
 
-        let mut ww = canvas.window().size().0 as i32;
-        let mut wh = canvas.window().size().1 as i32;
-
-        let radius: i32 = ((ww.min(wh) / 2) as f32 * 0.9) as _;
-        let height: i32 = ((3f32.sqrt() * radius as f32) / 2.0) as i32;
-
-        let offx = (ww - 2 * radius) / 2;
-        let offy = (wh - 2 * height) / 2;
-
-        ww -= offx;
-        wh -= offy;
-
         for s in &board.sections {
-            let pts = (s.points)(radius, height);
-
-            let y0 = wh - pts[0].1;
-            let y1 = wh - pts[1].1;
-            let y2 = wh - pts[2].1;
-            let y3 = wh - pts[3].1;
-
-            let x0 = offx + pts[0].0;
-            let x1 = offx + pts[1].0;
-            let x2 = offx + pts[2].0;
-            let x3 = offx + pts[3].0;
-
             for y in 0 .. 4 {
                 for x in 0 .. 4 {
-                    let mut points = [(0, 0); 4];
-
-                    let coords = s.get_coords(x, y);
-
-                    for a in 0 .. 2 {
-                        for b in 0 .. 2 {
-                            let xfrac = (x + a) as f32 / 4.0;
-                            let yfrac = (y + b) as f32 / 4.0;
-
-                            let xo0 = x0 as f32 + (x1 - x0) as f32 * xfrac;
-                            let xo1 = x3 as f32 + (x2 - x3) as f32 * xfrac;
-                            let rx = xo0 + (xo1 - xo0) * yfrac;
-
-                            let yo0 = y0 as f32 + (y3 - y0) as f32 * yfrac;
-                            let yo1 = y1 as f32 + (y2 - y1) as f32 * yfrac;
-                            let ry = yo0 + (yo1 - yo0) * xfrac;
-
-                            points[2 * a as usize + b as usize] = (rx as i32, ry as i32);
-                        }
-                    }
+                    let points = s.get_coords(x, y, ww, wh);
 
                     let f = s.fields[x][y];
 
@@ -377,6 +415,8 @@ fn main_loop(board: Board, textures: Vec<Vec<Image>>) {
 
                         let texture = &textures[color][piece];
                         let text = texture_creator.load_texture_bytes(&texture.data).unwrap();
+
+                        let (_, height) = s.get_radius_and_height(ww, wh);
 
                         let w = height / 6;
                         let h = w;
