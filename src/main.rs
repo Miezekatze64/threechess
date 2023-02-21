@@ -49,6 +49,7 @@ pub struct Field {
 pub enum Direction {
     ForwardRed,
     ForwardYellow,
+    ForwardGreen,
 }
 
 impl Direction {
@@ -99,6 +100,29 @@ impl Direction {
 
                 (start.coord.0, r)
             },
+            Direction::ForwardGreen => {
+                if start.coord.0 >= 'e'
+                && start.coord.0 <= 'h' {
+                    return None;
+                }
+
+                if start.coord.1 == 12 || start.coord.1 == 1 {
+                    return None;
+                }
+
+                let r = if start.coord.1 == 5
+                && start.coord.0 >= 'i' {
+                    9
+                } else {
+                    if start.coord.1 >= 9 {
+                        start.coord.1 + 1
+                    } else {
+                        start.coord.1 - 1
+                    }
+                };
+
+                (start.coord.0, r)
+            },
         };
 
         // HACK: make board mutable, cause we are not mutating it..
@@ -128,7 +152,8 @@ impl Field {
             PieceType::Pawn => todo!(),
             PieceType::Rook => {
                 let mut fields = vec![];
-                for direction in [Direction::ForwardRed, Direction::ForwardYellow] {
+                for direction in [Direction::ForwardRed, Direction::ForwardYellow,
+                                    Direction::ForwardGreen] {
                     let mut field = Some(*self);
                     while ({field = direction.next(&field.unwrap(), board, &player);
                             field.is_some()}) {
