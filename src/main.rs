@@ -50,6 +50,12 @@ pub enum Direction {
     ForwardRed,
     ForwardYellow,
     ForwardGreen,
+    RedRight,
+    RedLeft,
+    GreenRight,
+    GreenLeft,
+    YellowRight,
+    YellowLeft,
 }
 
 impl Direction {
@@ -88,14 +94,12 @@ impl Direction {
                     } else {
                         4
                     }
+                } else if start.coord.1 >= 9 {
+                    start.coord.1 - 1
+                } else if start.coord.1 >= 5 {
+                    start.coord.1 + 1
                 } else {
-                    if start.coord.1 >= 9 {
-                        start.coord.1 - 1
-                    } else if start.coord.1 >= 5 {
-                        start.coord.1 + 1
-                    } else {
-                        start.coord.1 - 1
-                    }
+                    start.coord.1 - 1
                 };
 
                 (start.coord.0, r)
@@ -113,22 +117,89 @@ impl Direction {
                 let r = if start.coord.1 == 5
                 && start.coord.0 >= 'i' {
                     9
+                } else if start.coord.1 >= 9 {
+                    start.coord.1 + 1
                 } else {
-                    if start.coord.1 >= 9 {
-                        start.coord.1 + 1
-                    } else {
-                        start.coord.1 - 1
-                    }
+                    start.coord.1 - 1
                 };
 
                 (start.coord.0, r)
             },
+            Direction::RedRight => {
+                if start.coord.1 >= 5 {
+                    return None;
+                }
+                let f = cadd(start.coord.0, 1);
+
+                (f, start.coord.1)
+            },
+            Direction::RedLeft => {
+                if start.coord.1 >= 5 {
+                    return None;
+                }
+                let f = csub(start.coord.0, 1);
+
+                (f, start.coord.1)
+            },
+            Direction::GreenRight => {
+                if start.coord.1 <= 4 {
+                    return None;
+                }
+                if start.coord.1 >= 9 {
+                    return None;
+                }
+                let f = if start.coord.0 == 'i' {
+                    'd'
+                } else {
+                    csub(start.coord.0, 1)
+                };
+
+                (f, start.coord.1)
+            },
+            Direction::GreenLeft => {
+                if start.coord.1 <= 4 {
+                    return None;
+                }
+                if start.coord.1 >= 9 {
+                    return None;
+                }
+                let f = if start.coord.0 == 'd' {
+                    'i'
+                } else {
+                    cadd(start.coord.0, 1)
+                };
+
+                (f, start.coord.1)
+            },
+            Direction::YellowRight => {
+                if start.coord.1 <= 8 {
+                    return None;
+                }
+                let f = if start.coord.0 == 'e' {
+                    'i'
+                } else if start.coord.0 >= 'i' {
+                    cadd(start.coord.0, 1)
+                } else {
+                    csub(start.coord.0, 1)
+                };
+
+                (f, start.coord.1)
+            },
+            Direction::YellowLeft => {
+                if start.coord.1 <= 8 {
+                    return None;
+                }
+                let f = match start.coord.0 {
+                    'i' => 'e',
+                    x if x > 'i'=> csub(x, 1),
+                    a => cadd(a, 1)
+                };
+
+                (f, start.coord.1)
+            },
         };
 
-        // HACK: make board mutable, cause we are not mutating it..
-        // But function needs it.. better way: chnage function
-        unsafe {&mut *(board as *const _ as *mut Board)}
-        .get_field(f, r).cloned()
+        board.get_field(f, r).cloned()
     }
 }
 
@@ -148,12 +219,57 @@ impl Field {
 
         let f = Board::get_fields(board);
 
+        const STRAIGHT_DIRS: [Direction; 9] = [Direction::ForwardRed, Direction::ForwardYellow,
+                                            Direction::ForwardGreen,
+                                            Direction::RedRight, Direction::RedLeft,
+                                            Direction::GreenRight, Direction::GreenLeft,
+                                            Direction::YellowRight, Direction::YellowLeft,
+        ];
+
         match piece.typ {
-            PieceType::Pawn => todo!(),
-            PieceType::Rook => {
+            PieceType::Pawn => {
+                let move_dir = match player {
+                    Player::Red => Direction::ForwardRed,
+                    Player::Green => Direction::ForwardGreen,
+                    Player::Yellow => Direction::ForwardYellow,
+                };
+
+                let is_at_home = match player {
+                    Player::Red => self.coord.1 == 2,
+                    Player::Green => false,
+                    Player::Yellow => false,
+                };
+
                 let mut fields = vec![];
-                for direction in [Direction::ForwardRed, Direction::ForwardYellow,
-                                    Direction::ForwardGreen] {
+                if let Some(a) = move_dir.next(self, board, &player) {
+                    if a.piece.is_none() {
+                        fields.push(a.coord);
+                    }
+
+                }
+                if is_at_home {
+                    if let Some(f) = fields.get(0) {
+                        if let Some(a) = move_dir.next(board.get_field(f.0, f.1).unwrap(), board, &player) {
+                            if a.piece.is_none() {
+                                fields.push(a.coord);
+                            }
+                        }
+                    }
+                }
+
+                fields
+            },
+            PieceType::Rook | PieceType::Bishop |
+            PieceType::Queen => {
+                let dirs = match piece.typ {
+                    PieceType::Rook => STRAIGHT_DIRS.to_vec(),
+                    PieceType::Bishop => vec![],
+                    PieceType::Queen => STRAIGHT_DIRS.to_vec(),
+                    _ => unreachable!("impossible"),
+                };
+
+                let mut fields = vec![];
+                for direction in dirs {
                     let mut field = Some(*self);
                     while ({field = direction.next(&field.unwrap(), board, &player);
                             field.is_some()}) {
@@ -175,13 +291,6 @@ impl Field {
                 fields
             },
             PieceType::Knight => todo!(),
-            PieceType::Bishop => todo!(),
-            PieceType::Queen => {
-                fields.iter().map(|x| x.coord)
-                             .filter(|Coord(f, r)|
-                             *f == self.coord.0 || *r == self.coord.1)
-                    .collect()
-            },
             PieceType::King => todo!(),
         }
     }
@@ -335,7 +444,23 @@ impl Board {
                           .collect::<Vec<_>>()
     }
 
-    fn get_section_and_field(&mut self, file: char, rank: usize) -> Option<(Section, &mut Field)> {
+    fn get_section_and_field(&self, file: char, rank: usize) -> Option<(Section, &Field)> {
+        for s in &self.sections {
+            let sect = *s;
+            for r in &s.fields {
+                for f in r.iter() {
+                    if f.coord.0 == file
+                        && f.coord.1 == rank {
+                            return Some((sect, f));
+                        }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn get_section_and_field_mut(&mut self, file: char, rank: usize) -> Option<(Section, &mut Field)> {
         for s in &mut self.sections {
             let sect = *s;
             for r in &mut s.fields {
@@ -351,8 +476,12 @@ impl Board {
         None
     }
 
-    fn get_field(&mut self, file: char, rank: usize) -> Option<&mut Field> {
+    fn get_field(&self, file: char, rank: usize) -> Option<&Field> {
         self.get_section_and_field(file, rank).map(|(_, f)| f)
+    }
+
+    fn get_field_mut(&mut self, file: char, rank: usize) -> Option<&mut Field> {
+        self.get_section_and_field_mut(file, rank).map(|(_, f)| f)
     }
 
     pub fn get_coords(&mut self, coord: Coord, ww: i32, wh: i32) -> Option<[(i32, i32); 4]> {
@@ -376,30 +505,32 @@ impl Board {
             invf ^= true;
         }
 
-        self.get_field(cadd(start_file,
+        self.get_field_mut(cadd(start_file,
                             if invf {3} else {0}), if invr {rank-1} else {rank+1}).unwrap()
                                 .piece = Some(Piece {
                                     typ: PieceType::Rook,
                                     player,
                                 });
-return;
-        self.get_field(cadd(start_file, if invf {2} else {1}), rank).unwrap()
-                                .piece = Some(Piece {
-                                    typ: PieceType::Knight,
-                                    player,
-                                });
-        self.get_field(cadd(start_file, if invf {1} else {2}), rank).unwrap()
-                                .piece = Some(Piece {
-                                    typ: PieceType::Bishop,
-                                    player,
-                                });
-        self.get_field(cadd(start_file, if invf {0} else {3}), rank).unwrap()
+
+        self.get_field_mut(cadd(start_file, if invf {0} else {3}), rank).unwrap()
                                 .piece = Some(Piece {
                                     typ: if right {PieceType::King} else {PieceType::Queen},
                                     player,
                                 });
+
+        self.get_field_mut(cadd(start_file, if invf {2} else {1}), rank).unwrap()
+                                .piece = Some(Piece {
+                                    typ: PieceType::Knight,
+                                    player,
+                                });
+        self.get_field_mut(cadd(start_file, if invf {1} else {2}), rank).unwrap()
+                                .piece = Some(Piece {
+                                    typ: PieceType::Bishop,
+                                    player,
+                                });
+
         for a in 0 .. 4 {
-            self.get_field(cadd(start_file,
+            self.get_field_mut(cadd(start_file,
                 a), if invr {rank-1} else {rank+1}) .unwrap()
                         .piece = Some(Piece {
                             typ: PieceType::Pawn,
@@ -539,7 +670,7 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                             } else {
                                 f.piece = board.active_field.unwrap().piece;
                                 let af = board.active_field.unwrap().coord;
-                                let mut_field = board.get_field(af.0, af.1).unwrap();
+                                let mut_field = board.get_field_mut(af.0, af.1).unwrap();
 
                                 mut_field.piece = None;
                                 board.active_field = None;
