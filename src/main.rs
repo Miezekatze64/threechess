@@ -1038,20 +1038,24 @@ impl Board {
         targets
     }
 
-    pub fn get_king_field(&self, player: Player) -> Field {
+    pub fn get_king_field(&self, player: Player) -> Option<Field> {
         let fields = self.get_fields();
         for f in fields {
             if let Some(p) = f.piece {
                 if p.player == player && p.typ == PieceType::King {
-                    return f;
+                    return Some(f);
                 }
             }
         }
-        unreachable!("the king of {player:?} died...?")
+        None
     }
 
     pub fn is_check(&self, player: Player) -> bool {
         let king = self.get_king_field(player);
+        let king = match king {
+            Some(k) => k,
+            None => return false,
+        };
         let moves = self.get_possible_move_targets_unchecked(player);
 
         moves.contains(&king.coord)
