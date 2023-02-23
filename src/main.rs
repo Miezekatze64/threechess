@@ -581,7 +581,7 @@ impl Field {
         }
     }
 
-    fn get_possible_moves(&self, board: &Board) -> Vec<Coord> {
+    fn get_possible_moves_unchecked(&self, board: &Board) -> Vec<Coord> {
         let piece = self.piece.unwrap();
         let player = piece.player;
         let fields = board.get_fields();
@@ -611,6 +611,20 @@ impl Field {
                     Player::Yellow => Direction::ForwardYellow,
                 };
 
+                let capture_dirs = match player {
+                    Player::Red => [Direction::RedToGreenRed, Direction::RedToRedYellow,
+                                    Direction::GreenYellowToGreen, Direction::GreenRedToGreen,
+                                    Direction::GreenYellowToYellow, Direction::RedYellowToYellow],
+
+                    Player::Green => [Direction::GreenToGreenRed, Direction::GreenToGreenYellow,
+                                    Direction::RedYellowToRed, Direction::GreenRedToGreen,
+                                    Direction::RedYellowToYellow, Direction::GreenYellowToYellow],
+
+                    Player::Yellow => [Direction::YellowToGreenYellow, Direction::YellowToRedYellow,
+                                    Direction::GreenRedToGreen, Direction::RedYellowToRed,
+                                    Direction::GreenRedToRed, Direction::GreenYellowToGreen],
+                };
+
                 let is_at_home = match player {
                     Player::Red => self.coord.1 == 2,
                     Player::Green => false,
@@ -618,12 +632,22 @@ impl Field {
                 };
 
                 let mut fields = vec![];
+                for capture_dir in capture_dirs {
+                    if let Some(a) = capture_dir.next(self, board, &player) {
+                        if let Some(p) = a.piece {
+                            if p.player != player {
+                                fields.push(a.coord);
+                            }
+                        }
+                    }
+                }
+
                 if let Some(a) = move_dir.next(self, board, &player) {
                     if a.piece.is_none() {
                         fields.push(a.coord);
                     }
-
                 }
+
                 if is_at_home {
                     if let Some(f) = fields.get(0) {
                         if let Some(a) = move_dir.next(board.get_field(f.0, f.1).unwrap(), board, &player) {
@@ -688,6 +712,10 @@ impl Field {
                 fields
             },
         }
+    }
+
+    fn get_possible_moves(&self, board: &Board) -> Vec<Coord> {
+        self.get_possible_moves_unchecked(board)
     }
 }
 
@@ -913,8 +941,6 @@ impl Board {
                                     player,
                                 });
 
-return;
-
         self.get_field_mut(cadd(start_file, if invf {2} else {1}), rank).unwrap()
                                 .piece = Some(Piece {
                                     typ: PieceType::Knight,
@@ -1042,7 +1068,7 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
         for e in event_pump.poll_iter() {
             match e {
                 sdl2::event::Event::Quit { .. } => break 'running,
-                sdl2::event::Event::MouseButtonDown { mouse_btn, x, y, .. } => {
+                sdl2::event::Event::MouseButtonUp { mouse_btn, x, y, .. } => {
                     if mouse_btn == MouseButton::Left {
                         let mut pressed_field = None;
                         'out: for s in &mut board.sections {
