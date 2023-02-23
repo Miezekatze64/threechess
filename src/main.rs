@@ -39,19 +39,34 @@ impl Player {
         }
     }
 
-    pub fn is_mate(&self, board: Board) -> bool {
+    pub fn is_mate(&self, board: &Board) -> bool {
         let fields = board.get_fields();
         for f in fields {
             if let Some(p) = f.piece {
-                if p.player == *self {
-                    if ! f.get_possible_moves(&board).is_empty() {
+                if p.player == *self &&
+                    (! f.get_possible_moves(board).is_empty()) {
                         return false;
-                    }
                 }
             }
         }
 
         true
+    }
+
+    pub fn can_capture_king(&self, board: &Board) -> bool {
+        let fields = board.get_fields();
+        for f in fields {
+            if let Some(p) = f.piece {
+                if p.player == *self {
+                    let (_, moves) = f.get_possible_moves_unking(board);
+                    if ! moves.is_empty() {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
     }
 }
 
@@ -860,7 +875,7 @@ impl Field {
         }
     }
 
-    fn get_possible_moves(&self, board: &Board) -> Vec<Coord> {
+    fn get_possible_moves_unking(&self, board: &Board) -> (Vec<Coord>, Vec<Coord>) {
         let moves = self.get_possible_moves_unchecked(board)
             .into_iter().filter(|x| {
                 let mut new_board = board.clone();
@@ -875,7 +890,6 @@ impl Field {
                 ! new_board.is_check(self.piece.unwrap().player)
         }).collect::<Vec<_>>();
 
-
         let mut king_capt_moves = vec![];
         for mov in &moves {
             let f = board.get_field(mov.0, mov.1).unwrap();
@@ -887,7 +901,14 @@ impl Field {
             }
         }
 
-        if king_capt_moves.is_empty() {
+        (moves, king_capt_moves)
+    }
+
+    fn get_possible_moves(&self, board: &Board) -> Vec<Coord> {
+        let (moves, king_capt_moves) = self.get_possible_moves_unking(board);
+        if king_capt_moves.is_empty() && self.piece.unwrap().player.can_capture_king(board) {
+            vec![]
+        } else if king_capt_moves.is_empty() {
             moves
         } else {
             king_capt_moves
@@ -999,7 +1020,7 @@ impl Section {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Board {
     sections: [Section; 6],
     current_player: Player,
@@ -1324,7 +1345,7 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                                     board.current_player = board.current_player.next();
                                 }
 
-                                if board.current_player.is_mate(board) {
+                                if board.current_player.is_mate(&board) {
                                     mate.insert(board.current_player, true);
                                     board.current_player = board.current_player.next();
                                 }
@@ -1342,6 +1363,21 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                 _ => (),
             }
         }
+
+        let string = format!("{}'s turn", board.current_player);
+
+        let surf = font.render(&string)
+                       .solid(match board.current_player {
+                           Player::Red => Color::RED,
+                           Player::Green => Color::GREEN,
+                           Player::Yellow => Color::RGB(0xff, 0xbf, 0x00),
+                       }).unwrap();
+
+        let text = texture_creator.create_texture_from_surface(surf).unwrap();
+
+        let (w, h) = font.size_of(&string).unwrap();
+        let target = Rect::new(ww - w as i32 - 10, h as i32 + 5, w, h);
+        canvas.copy(&text, None, Some(target)).unwrap();
 
         let mut yind = 1;
         for player in [Player::Red, Player::Green, Player::Yellow] {
@@ -1391,8 +1427,8 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
         }
 
         if mate_count == 2 {
-            let player = mate.iter().filter(|(p, a)| !*a)
-                                    .next().unwrap().0;
+            let player = mate.iter().find(|(p, a)| !*a)
+                                    .unwrap().0;
 
             let string = format!("{player} has won");
 
