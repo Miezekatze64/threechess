@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use std::io::Read;
+use std::{io::Read, collections::HashMap};
 
 use sdl2::{pixels::Color, rect::Rect, render::Canvas, image::LoadTexture, mouse::MouseButton};
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,11 +12,47 @@ pub enum FieldType {
     BLACK,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Player {
     Red = 0,
     Green = 1,
     Yellow = 2,
+}
+
+impl std::fmt::Display for Player {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Player::Red => write!(f, "red"),
+            Player::Green => write!(f, "green"),
+            Player::Yellow => write!(f, "yellow"),
+        }
+    }
+}
+
+
+impl Player {
+    pub fn next(&self) -> Self {
+        match self {
+            Player::Red => Player::Green,
+            Player::Green => Player::Yellow,
+            Player::Yellow => Player::Red,
+        }
+    }
+
+    pub fn is_mate(&self, board: Board) -> bool {
+        let fields = board.get_fields();
+        for f in fields {
+            if let Some(p) = f.piece {
+                if p.player == *self {
+                    if ! f.get_possible_moves(&board).is_empty() {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1212,6 +1248,11 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
     let texture_creator = canvas.texture_creator();
     sdl2::image::init(sdl2::image::InitFlag::PNG).unwrap();
 
+    let mut mate = HashMap::new();
+    mate.insert(Player::Green, false);
+    mate.insert(Player::Red, false);
+    mate.insert(Player::Yellow, false);
+
     'running: loop {
         canvas.set_draw_color(Color::WHITE);
         canvas.clear();
@@ -1225,12 +1266,12 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                 sdl2::event::Event::MouseButtonUp { mouse_btn, x, y, .. } => {
                     if mouse_btn == MouseButton::Left {
                         let mut pressed_field = None;
-                        'out: for s in &mut board.sections {
+                        'out: for s in &board.sections {
                             for yi in 0..4 {
                                 for xi in 0..4 {
                                     let coords = s.get_coords(xi, yi, ww, wh);
                                     if point_is_in_quadrilateral((x, y), &coords) {
-                                        pressed_field = Some(&mut s.fields[xi][yi]);
+                                        pressed_field = Some(s.fields[xi][yi].coord);
                                         break 'out;
                                     }
                                 }
@@ -1238,27 +1279,113 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                         }
 
                         if let Some(f) = pressed_field {
-                            if board.active_field.is_none() {
-                                if let Some(p) = f.piece {
-//                                    if p.player == board.current_player {
-                                        board.active_field = Some(*f);
-//                                    }
+                            if let Some(af) = board.active_field {
+                                let possible_moves = af.get_possible_moves(&board);
+                                if ! possible_moves.contains(&f) {
+                                    board.active_field = None;
+                                    continue;
                                 }
-                            } else {
-                                f.piece = board.active_field.unwrap().piece;
-                                let af = board.active_field.unwrap().coord;
+
+                                let moving_piece = board.active_field.unwrap().piece;
+
+                                let f = board.get_field_mut(f.0, f.1).unwrap();
+                                f.piece = moving_piece;
+
+                                let af = af.coord;
                                 let mut_field = board.get_field_mut(af.0, af.1).unwrap();
 
                                 mut_field.piece = None;
                                 board.active_field = None;
+
+                                board.current_player = board.current_player.next();
+                                while (mate[&board.current_player]) {
+                                    board.current_player = board.current_player.next();
+                                }
+
+                                if board.current_player.is_mate(board) {
+                                    mate.insert(board.current_player, true);
+                                    board.current_player = board.current_player.next();
+                                }
+                            } else {
+                                let f = board.get_field(f.0, f.1).unwrap();
+                                if let Some(p) = f.piece {
+                                    if p.player == board.current_player {
+                                        board.active_field = Some(*f);
+                                    }
+                                }
                             }
                         }
-
-                        println!("BUTTON {mouse_btn:?} at {x}/{y}");
                     }
                 },
                 _ => (),
             }
+        }
+
+        let mut yind = 1;
+        for player in [Player::Red, Player::Green, Player::Yellow] {
+            if ! board.is_check(player) {
+                continue;
+            }
+            let string = format!("{player} is in check");
+
+            let surf = font.render(&string)
+                .solid(match player {
+                    Player::Red => Color::RED,
+                    Player::Green => Color::GREEN,
+                    Player::Yellow => Color::RGB(0xff, 0xbf, 0x00),
+                }).unwrap();
+
+            let text = texture_creator.create_texture_from_surface(surf).unwrap();
+
+            let (w, h) = font.size_of(&string).unwrap();
+            let target = Rect::new(10, (h as i32 + 5) * yind, w, h);
+            canvas.copy(&text, None, Some(target)).unwrap();
+
+            yind += 1;
+        }
+
+        let mut mate_count = 0;
+        for (p, b) in &mate {
+            if !*b {
+                continue;
+            }
+            let string = format!("{p} is mate");
+
+            let surf = font.render(&string)
+                           .solid(match p {
+                               Player::Red => Color::RED,
+                               Player::Green => Color::GREEN,
+                               Player::Yellow => Color::RGB(0xff, 0xbf, 0x00),
+                           }).unwrap();
+
+            let text = texture_creator.create_texture_from_surface(surf).unwrap();
+
+            let (w, h) = font.size_of(&string).unwrap();
+            let target = Rect::new(10, (h as i32 + 5) * yind, w, h);
+            canvas.copy(&text, None, Some(target)).unwrap();
+
+            yind += 1;
+            mate_count += 1;
+        }
+
+        if mate_count == 2 {
+            let player = mate.iter().filter(|(p, a)| !*a)
+                                    .next().unwrap().0;
+
+            let string = format!("{player} has won");
+
+            let surf = font.render(&string)
+                .solid(match player {
+                    Player::Red => Color::RED,
+                    Player::Green => Color::GREEN,
+                    Player::Yellow => Color::RGB(0xff, 0xbf, 0x00),
+                }).unwrap();
+
+            let text = texture_creator.create_texture_from_surface(surf).unwrap();
+
+            let (w, h) = font.size_of(&string).unwrap();
+            let target = Rect::new(10, (h as i32 + 5) * yind, w, h);
+            canvas.copy(&text, None, Some(target)).unwrap();
         }
 
         for s in &board.sections {
