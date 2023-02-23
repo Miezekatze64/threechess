@@ -1,6 +1,0 @@
-ry r [x] -> r ry [x]
-ry y [x] -> y ry [x]
-gr r [x] -> r gr [x]
-gr g [x] -> g gr [x]
-gy y [x] -> y gy [x]
-gy g [x] -> g gy [x]
