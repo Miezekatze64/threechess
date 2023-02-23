@@ -56,6 +56,20 @@ pub enum Direction {
     GreenLeft,
     YellowRight,
     YellowLeft,
+
+    // diagonals
+    RedYellowToRed,
+    RedYellowToYellow,
+    GreenRedToRed,
+    GreenRedToGreen,
+    GreenYellowToYellow,
+    GreenYellowToGreen,
+    RedToRedYellow,
+    RedToGreenRed,
+    YellowToRedYellow,
+    YellowToGreenYellow,
+    GreenToGreenRed,
+    GreenToGreenYellow,
 }
 
 impl Direction {
@@ -189,6 +203,11 @@ impl Direction {
                 if start.coord.1 <= 8 {
                     return None;
                 }
+
+                if start.coord.0 == 'h' {
+                    return None;
+                }
+
                 let f = match start.coord.0 {
                     'i' => 'e',
                     x if x > 'i'=> csub(x, 1),
@@ -196,6 +215,356 @@ impl Direction {
                 };
 
                 (f, start.coord.1)
+            },
+            Direction::RedYellowToRed => {
+                if start.coord.0 >= 'i' ||
+                (start.coord.1 >= 5 && start.coord.1 <= 8) {
+                    return None;
+                }
+
+                if start.coord.1 == 1 {
+                    return None;
+                }
+
+                if start.coord.1 >= 9 && (start.coord.1 -
+                    (start.coord.0 as u8 - b'a' + 1) as usize
+                    >= 5) {
+                    return None;
+                }
+
+                if start.coord.1 <= 8 && start.coord.1 >
+                    (start.coord.0 as u8 - b'a' + 1) as usize {
+                    return None;
+                }
+
+                let f = csub(start.coord.0, 1);
+                let r = match start.coord.1 {
+                    9 => 4,
+                    x => x-1,
+                };
+
+                (f, r)
+            },
+            Direction::RedYellowToYellow => {
+                if start.coord.0 <= 'd' ||
+                    (start.coord.1 >= 5 && start.coord.1 <= 8) {
+                    return None;
+                }
+
+                if start.coord.1 == 12 {
+                    return None;
+                }
+
+                if start.coord.1 >= 9 && start.coord.1 <
+                    (start.coord.0 as u8 - b'a' + 1) as usize {
+                    return None;
+                }
+
+                if start.coord.1 <= 4 && (start.coord.1 +
+                    (start.coord.0 as u8 - b'a' + 1) as usize
+                    <= 8) {
+                    return None;
+                }
+
+                let f = match start.coord.0 {
+                    'e' => 'i',
+                    x if x <= 'h' => csub(start.coord.0, 1),
+                    x  => cadd(start.coord.0, 1),
+                };
+                let r = match start.coord.1 {
+                    4 => 9,
+                    x => x+1,
+                };
+
+                (f, r)
+            },
+            Direction::GreenRedToRed => {
+                if start.coord.0 >= 'i' {
+                    return None;
+                }
+
+                if start.coord.1 == 1 {
+                    return None;
+                }
+
+                if start.coord.1 +
+                    (start.coord.0 as u8 - b'a' + 1) as usize >= 10{
+                    return None;
+                }
+
+                let f = cadd(start.coord.0, 1);
+                let r = start.coord.1 - 1;
+                (f, r)
+            },
+            Direction::GreenRedToGreen => {
+                if start.coord.1 >= 9 {
+                    return None;
+                }
+
+                if start.coord.1 == 8 {
+                    return None;
+                }
+
+                if start.coord.0 <= 'h' && (start.coord.1 <
+                    (start.coord.0 as u8 - b'a' + 1) as usize) {
+                    return None;
+                }
+
+                if start.coord.0 >= 'i'
+                    && ((start.coord.0 as u8 - b'a' + 1) as usize
+                        - start.coord.1) >= 5 {
+                    return None;
+                }
+
+                let f = match start.coord.0 {
+                    'd' => 'i',
+                    x => cadd(x, 1),
+                };
+                let r = start.coord.1 + 1;
+                (f, r)
+            },
+            Direction::GreenYellowToYellow => {
+                if start.coord.1 <= 4 || start.coord.0 <= 'd' {
+                    return None;
+                }
+
+                if start.coord.1 == 12 {
+                    return None;
+                }
+
+                if start.coord.0 <= 'h' && (start.coord.1 -
+                    (start.coord.0 as u8 - b'a' + 1) as usize) <= 3 {
+                    return None;
+                }
+
+                if start.coord.1 <= 8
+                    && ((start.coord.0 as u8 - b'a' + 1) as usize - start.coord.1
+                    ) <= 3 {
+                    return None;
+                }
+
+                let f = match start.coord.0 {
+                    'i' => 'e',
+                    x if x >= 'i' => csub(x, 1),
+                    x  => cadd(x, 1),
+                };
+                let r = match start.coord.1 {
+                    5 => 9,
+                    x if x <= 8 => x - 1,
+                    x  => x + 1,
+                };
+
+                (f, r)
+            },
+            Direction::GreenYellowToGreen => {
+                if start.coord.1 <= 4 || (start.coord.0 >= 'e'
+                                          && start.coord.0 <= 'h') {
+                    return None;
+                }
+
+                if start.coord.1 == 8 {
+                    return None;
+                }
+
+                if start.coord.0 <= 'd' && (start.coord.1 +
+                    (start.coord.0 as u8 - b'a' + 1) as usize) <= 8 {
+                    return None;
+                }
+
+                if start.coord.0 >= 'i'
+                    && ((start.coord.0 as u8 - b'a' + 1) as usize) < start.coord.1 {
+                    return None;
+                }
+
+                let f = match start.coord.0 {
+                    'i' => 'd',
+                    x  => csub(x, 1),
+                };
+                let r = match start.coord.1 {
+                    9 => 5,
+                    x if x > 9 => x - 1,
+                    x => x + 1,
+                };
+
+                (f, r)
+            },
+            Direction::RedToRedYellow => {
+                if start.coord.0 >= 'i' || (start.coord.1 >= 5
+                                          && start.coord.1 <= 8) {
+                    return None;
+                }
+
+                if start.coord.0 == 'h' {
+                    return None;
+                }
+
+                if start.coord.0 <= 'd' && (start.coord.1 >
+                    (start.coord.0 as u8 - b'a' + 1) as usize) {
+                    return None;
+                }
+
+                if start.coord.1 >= 9
+                    && (start.coord.1 - (start.coord.0 as u8 - b'a' + 1) as usize) >= 5 {
+                    return None;
+                }
+
+                let f = cadd(start.coord.0, 1);
+                let r = match start.coord.1 {
+                    4 => 9,
+                    x => x + 1,
+                };
+
+                (f, r)
+            },
+            Direction::RedToGreenRed => {
+                if start.coord.1 >= 9 || start.coord.0 >= 'i' {
+                    return None;
+                }
+
+                if start.coord.0 == 'a' {
+                    return None;
+                }
+
+                if start.coord.1 >= 5 && (start.coord.1 +
+                    (start.coord.0 as u8 - b'a' + 1) as usize) >= 10 {
+                    return None;
+                }
+
+                if start.coord.0 >= 'e'
+                    && (start.coord.1 + (start.coord.0 as u8 - b'a' + 1) as usize) >= 10 {
+                    return None;
+                }
+
+                let f = csub(start.coord.0, 1);
+                let r = start.coord.1 + 1;
+
+                (f, r)
+            },
+            Direction::YellowToRedYellow => {
+                if (start.coord.1 <= 8
+                    && start.coord.1 >= 5) || start.coord.0 <= 'd' {
+                    return None;
+                }
+
+                if start.coord.0 == 'h' {
+                    return None;
+                }
+
+                if start.coord.1 <= 4 && (start.coord.1 +
+                    (start.coord.0 as u8 - b'a' + 1) as usize) <= 8 {
+                    return None;
+                }
+
+                if start.coord.0 >= 'i'
+                    && start.coord.1 < (start.coord.0 as u8 - b'a' + 1) as usize {
+                    return None;
+                }
+
+                let f = match start.coord.0 {
+                    'i' => 'e',
+                    x if x >= 'i' => csub(x, 1),
+                    x => cadd(x, 1),
+                };
+                let r = match start.coord.1 {
+                    9 => 4,
+                    x => x - 1,
+                };
+
+                (f, r)
+            },
+            Direction::YellowToGreenYellow => {
+                if start.coord.0 <= 'd'
+                    || start.coord.1 <= 4 {
+                    return None;
+                }
+
+                if start.coord.0 == 'l' {
+                    return None;
+                }
+
+                if start.coord.0 <= 'h' && (start.coord.1 -
+                    (start.coord.0 as u8 - b'a' + 1) as usize) <= 3 {
+                    return None;
+                }
+
+                if start.coord.1 <= 8
+                    && ((start.coord.0 as u8 - b'a' + 1) as usize - start.coord.1) <= 3 {
+                    return None;
+                }
+
+                let f = match start.coord.0 {
+                    'e' => 'i',
+                    x if x >= 'i' => cadd(x, 1),
+                    x => csub(x, 1),
+                };
+                let r = match start.coord.1 {
+                    9 => 5,
+                    x if x >= 9 => x - 1,
+                    x => x + 1,
+                };
+
+                (f, r)
+            },
+            Direction::GreenToGreenRed => {
+                if start.coord.1 >= 9 || (
+                    start.coord.0 <= 'h' &&  start.coord.0 >= 'e') {
+                    return None;
+                }
+
+                if start.coord.0 == 'a' {
+                    return None;
+                }
+
+                if start.coord.1 <= 4 && start.coord.1 <
+                    (start.coord.0 as u8 - b'a' + 1) as usize {
+                    return None;
+                }
+
+                if start.coord.0 >= 'i'
+                    && ((start.coord.0 as u8 - b'a' + 1) as usize
+                    - start.coord.1) >= 5 {
+                    return None;
+                }
+
+                let f = match start.coord.0 {
+                    'i' => 'd',
+                    x => csub(x, 1),
+                };
+                let r = start.coord.1 - 1;
+                (f, r)
+            },
+            Direction::GreenToGreenYellow => {
+                if (start.coord.0 <= 'h' && start.coord.0 >= 'e')
+                    || start.coord.1 <= 4 {
+                    return None;
+                }
+
+                if start.coord.0 == 'l' {
+                    return None;
+                }
+
+                if start.coord.0 <= 'd' && (start.coord.1 +
+                    (start.coord.0 as u8 - b'a' + 1) as usize) <= 8 {
+                    return None;
+                }
+
+                if start.coord.1 >= 9
+                    && ((start.coord.0 as u8 - b'a' + 1) as usize)
+                        < start.coord.1 {
+                    return None;
+                }
+
+                let f = match start.coord.0 {
+                    'd' => 'i',
+                    x => cadd(x, 1),
+                };
+                let r = match start.coord.1 {
+                    5 => 9,
+                    x if x >= 9 => x + 1,
+                    x => x - 1,
+                };
+
+                (f, r)
             },
         };
 
@@ -224,6 +593,14 @@ impl Field {
                                             Direction::RedRight, Direction::RedLeft,
                                             Direction::GreenRight, Direction::GreenLeft,
                                             Direction::YellowRight, Direction::YellowLeft,
+        ];
+        const DIAGONAL_DIRS: [Direction; 12] = [Direction::RedYellowToRed, Direction::RedYellowToYellow,
+                                               Direction::GreenRedToRed, Direction::GreenRedToGreen,
+                                               Direction::GreenYellowToYellow, Direction::GreenYellowToGreen,
+
+                                               Direction::RedToRedYellow, Direction::RedToGreenRed,
+                                               Direction::YellowToRedYellow, Direction::YellowToGreenYellow,
+                                               Direction::GreenToGreenYellow, Direction::GreenToGreenRed,
         ];
 
         match piece.typ {
@@ -263,8 +640,10 @@ impl Field {
             PieceType::Queen => {
                 let dirs = match piece.typ {
                     PieceType::Rook => STRAIGHT_DIRS.to_vec(),
-                    PieceType::Bishop => vec![],
-                    PieceType::Queen => STRAIGHT_DIRS.to_vec(),
+                    PieceType::Queen => vec![STRAIGHT_DIRS.to_vec(),
+                                              DIAGONAL_DIRS.to_vec()]
+                        .into_iter().flatten().collect(),
+                    PieceType::Bishop => DIAGONAL_DIRS.to_vec(),
                     _ => unreachable!("impossible"),
                 };
 
@@ -290,8 +669,24 @@ impl Field {
 
                 fields
             },
-            PieceType::Knight => todo!(),
-            PieceType::King => todo!(),
+            PieceType::Knight => vec![],
+            PieceType::King => {
+                let mut dirs = STRAIGHT_DIRS.to_vec();
+                dirs.append(&mut DIAGONAL_DIRS.to_vec());
+                let mut fields = vec![];
+                for d in dirs {
+                    let field = d.next(&self, board, &player);
+                    if field.is_some() {
+                        if let Some(p) = field.unwrap().piece {
+                            if p.player == player {
+                                continue;
+                            }
+                        }
+                        fields.push(field.unwrap().coord);
+                    }
+                }
+                fields
+            },
         }
     }
 }
@@ -506,7 +901,7 @@ impl Board {
         }
 
         self.get_field_mut(cadd(start_file,
-                            if invf {3} else {0}), if invr {rank-1} else {rank+1}).unwrap()
+                            if invf {3} else {0}), rank).unwrap()
                                 .piece = Some(Piece {
                                     typ: PieceType::Rook,
                                     player,
@@ -517,6 +912,8 @@ impl Board {
                                     typ: if right {PieceType::King} else {PieceType::Queen},
                                     player,
                                 });
+
+return;
 
         self.get_field_mut(cadd(start_file, if invf {2} else {1}), rank).unwrap()
                                 .piece = Some(Piece {
