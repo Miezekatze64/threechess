@@ -45,7 +45,7 @@ pub struct Field {
     pub piece: Option<Piece>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Direction {
     ForwardRed,
     ForwardYellow,
@@ -73,6 +73,40 @@ pub enum Direction {
 }
 
 impl Direction {
+    pub fn is_straight(&self) -> bool {
+        self <= &Direction::YellowLeft
+    }
+
+    pub fn all() -> Vec<Self> {
+        let mut v = vec![];
+        for a in (Self::ForwardRed as usize
+                  ..= Self::GreenToGreenYellow as usize) {
+            let var: Self = unsafe {std::mem::transmute(a as u8)};
+            v.push(var);
+        }
+        v
+    }
+
+    pub fn is_opposite(&self, other: &Self) -> bool {
+        match self {
+            Self::ForwardRed => other == &Self::ForwardGreen || other == &Self::ForwardYellow,
+            Self::ForwardYellow => other == &Self::ForwardGreen || other == &Self::ForwardRed,
+            Self::ForwardGreen => other == &Self::ForwardRed || other == &Self::ForwardYellow,
+            Self::RedRight => other == &Self::RedLeft,
+            Self::RedLeft => other == &Self::RedRight,
+            Self::GreenRight => other == &Self::GreenLeft,
+            Self::GreenLeft => other == &Self::GreenRight,
+            Self::YellowRight => other == &Self::YellowLeft,
+            Self::YellowLeft => other == &Self::YellowRight,
+            _ => false,
+        }
+    }
+
+    pub fn orthogonals(&self) -> Vec<Self> {
+        Self::all().into_iter().filter(|x| x != self && x.is_straight() && ! self.is_opposite(x))
+                          .collect()
+    }
+
     pub fn next(&self, start: &Field, board: &Board, player: &Player) -> Option<Field> {
         let (f, r) = match self {
             Direction::ForwardRed => {
@@ -584,9 +618,8 @@ impl Field {
     fn get_pawn_dirs(&self, player: Player) -> Vec<Direction> {
         vec![match player {
             Player::Red => {
-                if self.coord.0 >= 'e' && self.coord.0 <= 'h' {
-                    Direction::ForwardRed
-                } else if self.coord.0 >= 'a' && self.coord.0 <= 'd' {
+                if (self.coord.0 >= 'e' && self.coord.0 <= 'h') ||
+                    (self.coord.0 >= 'a' && self.coord.0 <= 'd') {
                     Direction::ForwardRed
                 } else if self.coord.1 <= 8 {
                     Direction::ForwardYellow
@@ -595,9 +628,8 @@ impl Field {
                 }
             },
             Player::Green => {
-                if self.coord.0 >= 'a' && self.coord.0 <= 'd' {
-                    Direction::ForwardGreen
-                } else if self.coord.0 >= 'i' {
+                if (self.coord.0 >= 'a' && self.coord.0 <= 'd') ||
+                    (self.coord.0 >= 'i') {
                     Direction::ForwardGreen
                 } else if self.coord.1 <= 4 {
                     Direction::ForwardYellow
@@ -606,9 +638,8 @@ impl Field {
                 }
             },
             Player::Yellow => {
-                if self.coord.0 >= 'e' && self.coord.0 <= 'h' {
-                    Direction::ForwardYellow
-                } else if self.coord.0 >= 'i' {
+                if (self.coord.0 >= 'e' && self.coord.0 <= 'h') ||
+                    (self.coord.0 >= 'i') {
                     Direction::ForwardYellow
                 } else if self.coord.1 <= 4 {
                     Direction::ForwardGreen
@@ -735,20 +766,57 @@ impl Field {
 
                 fields
             },
-            PieceType::Knight => vec![],
+            PieceType::Knight => {
+                let mut fields = vec![];
+
+                // 1 - 2
+                for dir in STRAIGHT_DIRS {
+                    let f1 = dir.next(self, board, &player);
+                    for orth in dir.orthogonals() {
+                        let f3 = f1.and_then(|f| orth.next(&f, board, &player))
+                            .and_then(|f| orth.next(&f, board, &player));
+                        if let Some(f) = f3 {
+                            if let Some(p) = f.piece {
+                                if p.player == player {
+                                    continue;
+                                }
+                            }
+                            fields.push(f.coord);
+                        }
+                    }
+                }
+
+                // 2 - 1
+                for dir in STRAIGHT_DIRS {
+                    let f2 = dir.next(self, board, &player)
+                        .and_then(|f| dir.next(&f, board, &player));
+                    for orth in dir.orthogonals() {
+                        let f3 = f2.and_then(|f| orth.next(&f, board, &player));
+                        if let Some(f) = f3 {
+                            if let Some(p) = f.piece {
+                                if p.player == player {
+                                    continue;
+                                }
+                            }
+                            fields.push(f.coord);
+                        }
+                    }
+                }
+                fields
+            }
             PieceType::King => {
                 let mut dirs = STRAIGHT_DIRS.to_vec();
                 dirs.append(&mut DIAGONAL_DIRS.to_vec());
                 let mut fields = vec![];
                 for d in dirs {
-                    let field = d.next(&self, board, &player);
-                    if field.is_some() {
-                        if let Some(p) = field.unwrap().piece {
+                    let field = d.next(self, board, &player);
+                    if let Some(f) = field {
+                        if let Some(p) = f.piece {
                             if p.player == player {
                                 continue;
                             }
                         }
-                        fields.push(field.unwrap().coord);
+                        fields.push(f.coord);
                     }
                 }
                 fields
