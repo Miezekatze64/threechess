@@ -1322,7 +1322,13 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                         }
 
                         if let Some(f) = pressed_field {
-                            if let Some(af) = board.active_field {
+                            let pf = board.get_field(f.0, f.1).unwrap();
+                            if board.active_field.is_some() &&
+                                ! (pf.piece.map_or(false, |x| x
+                                .player == board.current_player)) {
+//                                    println!("TRUEE");
+                                let af = board.active_field.unwrap();
+
                                 let possible_moves = af.get_possible_moves(&board);
                                 if ! possible_moves.contains(&f) {
                                     board.active_field = None;
@@ -1350,10 +1356,9 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                                     board.current_player = board.current_player.next();
                                 }
                             } else {
-                                let f = board.get_field(f.0, f.1).unwrap();
-                                if let Some(p) = f.piece {
+                                if let Some(p) = pf.piece {
                                     if p.player == board.current_player {
-                                        board.active_field = Some(*f);
+                                        board.active_field = Some(*pf);
                                     }
                                 }
                             }
