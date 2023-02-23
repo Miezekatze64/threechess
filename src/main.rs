@@ -19,7 +19,7 @@ pub enum Player {
     Yellow = 2,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PieceType {
     Pawn = 0,
     Rook,
@@ -826,6 +826,18 @@ impl Field {
 
     fn get_possible_moves(&self, board: &Board) -> Vec<Coord> {
         self.get_possible_moves_unchecked(board)
+            .into_iter().filter(|x| {
+                let mut new_board = board.clone();
+                new_board.get_field_mut(x.0, x.1)
+                    .unwrap().piece =
+                    self.piece;
+
+                new_board.get_field_mut(self.coord.0, self.coord.1)
+                    .unwrap().piece =
+                    None;
+
+                ! new_board.is_check(self.piece.unwrap().player)
+        }).collect()
     }
 }
 
@@ -975,6 +987,38 @@ impl Board {
                          .collect::<Vec<_>>()
                          ).flatten()
                           .collect::<Vec<_>>()
+    }
+
+    pub fn get_possible_move_targets_unchecked(&self, player: Player) -> Vec<Coord> {
+        let fields = self.get_fields();
+        let mut targets = vec![];
+        for f in fields {
+            if f.piece.is_none() {
+                continue;
+            }
+            let mut moves = f.get_possible_moves_unchecked(self);
+            targets.append(&mut moves);
+        }
+        targets
+    }
+
+    pub fn get_king_field(&self, player: Player) -> Field {
+        let fields = self.get_fields();
+        for f in fields {
+            if let Some(p) = f.piece {
+                if p.player == player && p.typ == PieceType::King {
+                    return f;
+                }
+            }
+        }
+        unreachable!("the king of {player:?} died...?")
+    }
+
+    pub fn is_check(&self, player: Player) -> bool {
+        let king = self.get_king_field(player);
+        let moves = self.get_possible_move_targets_unchecked(player);
+
+        moves.contains(&king.coord)
     }
 
     fn get_section_and_field(&self, file: char, rank: usize) -> Option<(Section, &Field)> {
