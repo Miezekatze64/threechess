@@ -5,6 +5,6 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies.sdl2]
+[target.'cfg(not(target_family = "wasm"))'.dependencies.sdl2]
 version = "*"
 features = ["ttf", "image"]

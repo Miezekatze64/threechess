@@ -1,8 +1,25 @@
-#![allow(unused)]
+mod backend;
 
-use std::{io::Read, collections::HashMap, any::Any};
+#[cfg(not(target_family = "wasm"))]
+mod sdl_backend;
 
-use sdl2::{pixels::Color, rect::Rect, render::Canvas, image::LoadTexture, mouse::MouseButton};
+#[cfg(target_family = "wasm")]
+mod wasm_backend;
+
+use crate::backend::Backend;
+
+#[cfg(not(target_family = "wasm"))]
+type BackendType<'a, 'b> = SdlBackend<'a, 'b>;
+
+#[cfg(target_family = "wasm")]
+type BackendType = WasmBackend;
+
+
+use std::{io::Read, collections::HashMap};
+
+use backend::{Color, Event, MouseButton};
+use sdl_backend::SdlBackend;
+
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Coord(char, usize);
 
@@ -130,8 +147,8 @@ impl Direction {
 
     pub fn all() -> Vec<Self> {
         let mut v = vec![];
-        for a in (Self::ForwardRed as usize
-                  ..= Self::GreenToGreenYellow as usize) {
+        for a in Self::ForwardRed as usize
+                  ..= Self::GreenToGreenYellow as usize {
             let var: Self = unsafe {std::mem::transmute(a as u8)};
             v.push(var);
         }
@@ -158,7 +175,7 @@ impl Direction {
                           .collect()
     }
 
-    pub fn next(&self, start: &Field, board: &Board, player: &Player) -> Option<Field> {
+    pub fn next(&self, start: &Field, board: &Board, _player: &Player) -> Option<Field> {
         let (f, r) = match self {
             Direction::ForwardRed => {
                 if start.coord.0 >= 'i' {
@@ -354,7 +371,7 @@ impl Direction {
                 let f = match start.coord.0 {
                     'e' => 'i',
                     x if x <= 'h' => csub(start.coord.0, 1),
-                    x  => cadd(start.coord.0, 1),
+                    _  => cadd(start.coord.0, 1),
                 };
                 let r = match start.coord.1 {
                     4 => 9,
@@ -704,9 +721,9 @@ impl Field {
     fn get_possible_moves_unchecked(&self, board: &Board) -> Vec<Coord> {
         let piece = self.piece.unwrap();
         let player = piece.player;
-        let fields = board.get_fields();
+        let _fields = board.get_fields();
 
-        let f = Board::get_fields(board);
+        let _f = Board::get_fields(board);
 
         const STRAIGHT_DIRS: [Direction; 9] = [Direction::ForwardRed, Direction::ForwardYellow,
                                                Direction::ForwardGreen,
@@ -791,8 +808,8 @@ impl Field {
                 let mut fields = vec![];
                 for direction in dirs {
                     let mut field = Some(*self);
-                    while ({field = direction.next(&field.unwrap(), board, &player);
-                            field.is_some()}) {
+                    while {field = direction.next(&field.unwrap(), board, &player);
+                            field.is_some()} {
                         if field.is_none() {
                             break;
                         }
@@ -969,14 +986,14 @@ impl Section {
         (radius, height)
     }
 
-    fn get_coords(&self, x: usize, y: usize, mut ww: i32, mut wh: i32) -> [(i32, i32); 4] {
+    fn get_coords(&self, x: usize, y: usize, ww: i32, mut wh: i32) -> [(i32, i32); 4] {
         let (radius, height) = self.get_radius_and_height(ww, wh);
 
 
         let offx = (ww - 2 * radius) / 2;
         let offy = (wh - 2 * height) / 2;
 
-        ww -= offx;
+//        ww -= offx;
         wh -= offy;
 
         let pts = (self.points)(radius, height);
@@ -1057,7 +1074,7 @@ impl Board {
                           .collect::<Vec<_>>()
     }
 
-    pub fn get_possible_move_targets_unchecked(&self, player: Player) -> Vec<Coord> {
+    pub fn get_possible_move_targets_unchecked(&self, _player: Player) -> Vec<Coord> {
         let fields = self.get_fields();
         let mut targets = vec![];
         for f in fields {
@@ -1201,12 +1218,12 @@ impl Board {
     }
 }
 
-fn draw_polygon<T: sdl2::render::RenderTarget>
-    (canvas: &mut Canvas<T>, points: &[(i32, i32)]) {
-    canvas.draw_line(points[0], points[2]).unwrap();
-    canvas.draw_line(points[2], points[3]).unwrap();
-    canvas.draw_line(points[3], points[1]).unwrap();
-    canvas.draw_line(points[1], points[0]).unwrap();
+fn draw_polygon<B: backend::Backend>
+    (backend: &mut B, points: &[(i32, i32)]) {
+    backend.draw_line(points[0], points[2]);
+    backend.draw_line(points[2], points[3]);
+    backend.draw_line(points[3], points[1]);
+    backend.draw_line(points[1], points[0]);
 }
 
 fn sign(p1: (i32, i32), p2: (i32, i32), p3: (i32, i32)) -> i32 {
@@ -1230,8 +1247,7 @@ fn point_is_in_quadrilateral(pt: (i32, i32), points: &[(i32, i32); 4]) -> bool {
     point_is_in_triangle(pt, &[points[1], points[2], points[3]])
 }
 
-fn fill_quadrilateral<T: sdl2::render::RenderTarget>
-    (canvas: &mut Canvas<T>, points: &[(i32, i32); 4]) {
+fn fill_quadrilateral(backend: &mut BackendType, points: &[(i32, i32); 4]) {
     let lx = points[0].0
         .min(points[1].0)
         .min(points[2].0)
@@ -1255,7 +1271,7 @@ fn fill_quadrilateral<T: sdl2::render::RenderTarget>
     for y in ly ..= ry {
         for x in lx ..= rx {
             if point_is_in_quadrilateral((x, y), points) {
-                canvas.draw_point((x, y)).unwrap();
+                backend.draw_point(x, y);
             }
         }
     }
@@ -1263,26 +1279,7 @@ fn fill_quadrilateral<T: sdl2::render::RenderTarget>
 
 
 fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
-    let ctx = sdl2::init().unwrap();
-    let vid = ctx.video().unwrap();
-
-    let win = vid.window("threechess", 800, 800)
-        .resizable()
-        .build()
-        .unwrap();
-
-    let mut canvas = win.into_canvas()
-                    .accelerated()
-                    .present_vsync()
-                    .build()
-                    .unwrap();
-    let mut event_pump = ctx.event_pump().unwrap();
-
-    let ttf = sdl2::ttf::init().unwrap();
-    let font = ttf.load_font("./FiraCode.ttf", 18).unwrap();
-
-    let texture_creator = canvas.texture_creator();
-    sdl2::image::init(sdl2::image::InitFlag::PNG).unwrap();
+    let mut backend = BackendType::new();
 
     let mut mate = HashMap::new();
     mate.insert(Player::Green, false);
@@ -1290,16 +1287,18 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
     mate.insert(Player::Yellow, false);
 
     'running: loop {
-        canvas.set_draw_color(Color::WHITE);
-        canvas.clear();
+        println!("HERE!!");
+        backend.set_draw_color(Color::WHITE);
+        backend.clear();
 
-        let ww = canvas.window().size().0 as i32;
-        let wh = canvas.window().size().1 as i32;
+        let ww = backend.win_size().0 as i32;
+        let wh = backend.win_size().1 as i32;
 
-        for e in event_pump.poll_iter() {
+        for e in backend.poll_event() {
             match e {
-                sdl2::event::Event::Quit { .. } => break 'running,
-                sdl2::event::Event::MouseButtonUp { mouse_btn, x, y, .. } => {
+                Event::Quit => break 'running,
+                Event::MouseButtonUp(mouse_btn, x, y) => {
+                    println!("CLICK!");
                     if mouse_btn == MouseButton::Left {
                         let mut pressed_field = None;
                         'out: for s in &board.sections {
@@ -1336,8 +1335,6 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                                         Player::Yellow => f.1 == 8 || f.1 == 1,
                                     };
 
-                                    println!("HERE: {at_end}");
-
                                     if at_end {
                                         moving_piece.as_mut().unwrap().typ = PieceType::Queen;
                                     }
@@ -1353,7 +1350,7 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                                 board.active_field = None;
 
                                 board.current_player = board.current_player.next();
-                                while (mate[&board.current_player]) {
+                                while mate[&board.current_player] {
                                     board.current_player = board.current_player.next();
                                 }
 
@@ -1371,24 +1368,18 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                         }
                     }
                 },
-                _ => (),
+//                _ => (),
             }
         }
 
         let string = format!("{}'s turn", board.current_player);
-
-        let surf = font.render(&string)
-                       .solid(match board.current_player {
-                           Player::Red => Color::RED,
-                           Player::Green => Color::GREEN,
-                           Player::Yellow => Color::RGB(0xff, 0xbf, 0x00),
-                       }).unwrap();
-
-        let text = texture_creator.create_texture_from_surface(surf).unwrap();
-
-        let (w, h) = font.size_of(&string).unwrap();
-        let target = Rect::new(ww - w as i32 - 10, h as i32 + 5, w, h);
-        canvas.copy(&text, None, Some(target)).unwrap();
+        let (w, h) = backend.text_size(&string);
+        backend.render_text(&string, ww - w as i32 - 10, h as i32 + 5,
+                            match board.current_player {
+                                Player::Red => Color::RED,
+                                Player::Green => Color::GREEN,
+                                Player::Yellow => Color(0xff, 0xbf, 0x00),
+                            });
 
         let mut yind = 1;
         for player in [Player::Red, Player::Green, Player::Yellow] {
@@ -1396,20 +1387,12 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                 continue;
             }
             let string = format!("{player} is in check");
-
-            let surf = font.render(&string)
-                .solid(match player {
-                    Player::Red => Color::RED,
-                    Player::Green => Color::GREEN,
-                    Player::Yellow => Color::RGB(0xff, 0xbf, 0x00),
-                }).unwrap();
-
-            let text = texture_creator.create_texture_from_surface(surf).unwrap();
-
-            let (w, h) = font.size_of(&string).unwrap();
-            let target = Rect::new(10, (h as i32 + 5) * yind, w, h);
-            canvas.copy(&text, None, Some(target)).unwrap();
-
+            backend.render_text(&string, 10, (h as i32 + 5) * yind,
+                            match board.current_player {
+                                Player::Red => Color::RED,
+                                Player::Green => Color::GREEN,
+                                Player::Yellow => Color(0xff, 0xbf, 0x00),
+                            });
             yind += 1;
         }
 
@@ -1419,42 +1402,27 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                 continue;
             }
             let string = format!("{p} is mate");
-
-            let surf = font.render(&string)
-                           .solid(match p {
-                               Player::Red => Color::RED,
-                               Player::Green => Color::GREEN,
-                               Player::Yellow => Color::RGB(0xff, 0xbf, 0x00),
-                           }).unwrap();
-
-            let text = texture_creator.create_texture_from_surface(surf).unwrap();
-
-            let (w, h) = font.size_of(&string).unwrap();
-            let target = Rect::new(10, (h as i32 + 5) * yind, w, h);
-            canvas.copy(&text, None, Some(target)).unwrap();
-
+            backend.render_text(&string, 10, (h as i32 + 5) * yind,
+                            match board.current_player {
+                                Player::Red => Color::RED,
+                                Player::Green => Color::GREEN,
+                                Player::Yellow => Color(0xff, 0xbf, 0x00),
+                            });
             yind += 1;
             mate_count += 1;
         }
 
         if mate_count == 2 {
-            let player = mate.iter().find(|(p, a)| !*a)
+            let player = mate.iter().find(|(_p, a)| !*a)
                                     .unwrap().0;
 
             let string = format!("{player} has won");
-
-            let surf = font.render(&string)
-                .solid(match player {
-                    Player::Red => Color::RED,
-                    Player::Green => Color::GREEN,
-                    Player::Yellow => Color::RGB(0xff, 0xbf, 0x00),
-                }).unwrap();
-
-            let text = texture_creator.create_texture_from_surface(surf).unwrap();
-
-            let (w, h) = font.size_of(&string).unwrap();
-            let target = Rect::new(10, (h as i32 + 5) * yind, w, h);
-            canvas.copy(&text, None, Some(target)).unwrap();
+            backend.render_text(&string, 10, (h as i32 + 5) * yind,
+                            match board.current_player {
+                                Player::Red => Color::RED,
+                                Player::Green => Color::GREEN,
+                                Player::Yellow => Color(0xff, 0xbf, 0x00),
+                            });
         }
 
         for s in &board.sections {
@@ -1464,11 +1432,11 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                     let f = s.fields[x][y];
 
                     if f.typ == FieldType::BLACK {
-                        canvas.set_draw_color(Color::BLACK);
-                        fill_quadrilateral(&mut canvas, &points);
+                        backend.set_draw_color(Color::BLACK);
+                        fill_quadrilateral(&mut backend, &points);
                     }
-                    canvas.set_draw_color(Color::RED);
-                    draw_polygon(&mut canvas, &points);
+                    backend.set_draw_color(Color::RED);
+                    draw_polygon(&mut backend, &points);
 
                     let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
                     let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
@@ -1477,18 +1445,13 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                                      .to_uppercase(),
                                      s.start_rank as i32 + y as i32);
 
-                    let surf = font.render(&st)
-                        .solid(if f.typ == FieldType::BLACK {
-                            Color::RGB(0xdd, 0xdd, 0xdd)
+                    let (w, h) = backend.text_size(&st);
+                    backend.render_text(&st, mx - w as i32 / 2, my - h as i32 / 2,
+                            if f.typ == FieldType::BLACK {
+                            Color(0xdd, 0xdd, 0xdd)
                         } else {
-                            Color::RGB(0x22, 0x22, 0x22)
-                        }).unwrap();
-
-                    let text = texture_creator.create_texture_from_surface(surf).unwrap();
-
-                    let (w, h) = font.size_of(&st).unwrap();
-                    let target = Rect::new(mx - w as i32 / 2, my - h as i32 / 2, w, h);
-                    canvas.copy(&text, None, Some(target)).unwrap();
+                            Color(0x22, 0x22, 0x22)
+                        });
                 }
             }
         }
@@ -1498,7 +1461,7 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
             let coords: Vec<_> = active_fields.iter().flat_map(|f| board.get_coords(*f, ww, wh)).collect();
 
             for points in coords {
-                canvas.set_draw_color(
+                backend.set_draw_color(
                     [Color::RED, Color::GREEN, Color::YELLOW][board.current_player as usize]
                 );
                 let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
@@ -1512,7 +1475,7 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                         let y = ry - my;
 
                         if x * x + y * y < r * r {
-                            canvas.draw_point((rx, ry)).unwrap();
+                            backend.draw_point(rx, ry);
                         }
                     }
                 }
@@ -1532,20 +1495,19 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                         let piece = p.typ as usize;
 
                         let texture = &textures[color][piece];
-                        let text = texture_creator.load_texture_bytes(&texture.data).unwrap();
 
                         let (_, height) = s.get_radius_and_height(ww, wh);
 
                         let w = height / 6;
                         let h = w;
 
-                        let target = Rect::new(mx - w / 2, my - h / 2, w as u32, h as u32);
-                        canvas.copy(&text, None, Some(target)).unwrap();
+                        backend.render_png_data(&texture.data,
+                                                mx - w / 2, my - h / 2, w, h);
                     }
                 }
             }
         }
-        canvas.present();
+        backend.present();
     }
 }
 
