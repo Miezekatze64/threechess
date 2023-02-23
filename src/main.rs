@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use std::{io::Read, collections::HashMap};
+use std::{io::Read, collections::HashMap, any::Any};
 
 use sdl2::{pixels::Color, rect::Rect, render::Canvas, image::LoadTexture, mouse::MouseButton};
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
@@ -709,30 +709,23 @@ impl Field {
         let f = Board::get_fields(board);
 
         const STRAIGHT_DIRS: [Direction; 9] = [Direction::ForwardRed, Direction::ForwardYellow,
-                                            Direction::ForwardGreen,
-                                            Direction::RedRight, Direction::RedLeft,
-                                            Direction::GreenRight, Direction::GreenLeft,
-                                            Direction::YellowRight, Direction::YellowLeft,
+                                               Direction::ForwardGreen,
+                                               Direction::RedRight, Direction::RedLeft,
+                                               Direction::GreenRight, Direction::GreenLeft,
+                                               Direction::YellowRight, Direction::YellowLeft,
         ];
         const DIAGONAL_DIRS: [Direction; 12] = [Direction::RedYellowToRed, Direction::RedYellowToYellow,
-                                               Direction::GreenRedToRed, Direction::GreenRedToGreen,
-                                               Direction::GreenYellowToYellow, Direction::GreenYellowToGreen,
+                                                Direction::GreenRedToRed, Direction::GreenRedToGreen,
+                                                Direction::GreenYellowToYellow, Direction::GreenYellowToGreen,
 
-                                               Direction::RedToRedYellow, Direction::RedToGreenRed,
-                                               Direction::YellowToRedYellow, Direction::YellowToGreenYellow,
-                                               Direction::GreenToGreenYellow, Direction::GreenToGreenRed,
+                                                Direction::RedToRedYellow, Direction::RedToGreenRed,
+                                                Direction::YellowToRedYellow, Direction::YellowToGreenYellow,
+                                                Direction::GreenToGreenYellow, Direction::GreenToGreenRed,
         ];
 
         match piece.typ {
             PieceType::Pawn => {
                 let move_dirs = self.get_pawn_dirs(player);
-                // match player {
-                //     Player::Red => vec![Direction::ForwardRed,
-                //                         Direction::ForwardYellow,
-                //                         Direction::ForwardGreen],
-                //     Player::Green => vec![Direction::ForwardGreen],
-                //     Player::Yellow => vec![Direction::ForwardYellow],
-                // };
 
                 let capture_dirs = match player {
                     Player::Red => [Direction::RedToGreenRed, Direction::RedToRedYellow,
@@ -1286,7 +1279,7 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
     let mut event_pump = ctx.event_pump().unwrap();
 
     let ttf = sdl2::ttf::init().unwrap();
-    let font = ttf.load_font("./FiraCode.ttf", 13).unwrap();
+    let font = ttf.load_font("./FiraCode.ttf", 18).unwrap();
 
     let texture_creator = canvas.texture_creator();
     sdl2::image::init(sdl2::image::InitFlag::PNG).unwrap();
@@ -1326,7 +1319,6 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                             if board.active_field.is_some() &&
                                 ! (pf.piece.map_or(false, |x| x
                                 .player == board.current_player)) {
-//                                    println!("TRUEE");
                                 let af = board.active_field.unwrap();
 
                                 let possible_moves = af.get_possible_moves(&board);
@@ -1335,7 +1327,21 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
                                     continue;
                                 }
 
-                                let moving_piece = board.active_field.unwrap().piece;
+                                let mut moving_piece = board.active_field.unwrap().piece;
+
+                                if moving_piece.unwrap().typ == PieceType::Pawn {
+                                    let at_end = match board.current_player {
+                                        Player::Red => f.1 == 8 || f.1 == 12,
+                                        Player::Green => f.1 == 1 || f.1 == 12,
+                                        Player::Yellow => f.1 == 8 || f.1 == 1,
+                                    };
+
+                                    println!("HERE: {at_end}");
+
+                                    if at_end {
+                                        moving_piece.as_mut().unwrap().typ = PieceType::Queen;
+                                    }
+                                }
 
                                 let f = board.get_field_mut(f.0, f.1).unwrap();
                                 f.piece = moving_piece;
