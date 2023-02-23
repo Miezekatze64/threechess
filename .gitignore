@@ -1,1 +1,4 @@
 /target
+__test
+__win
+*.zip
