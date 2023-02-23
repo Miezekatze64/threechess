@@ -32,4 +32,9 @@ pub trait Backend {
     fn render_text(&mut self, text: &str, x: i32, y: i32, color: Color);
     fn render_png_data(&mut self, data: &[u8], x: i32, y: i32, w: i32, h: i32);
     fn present(&mut self);
+
+    fn read_file(&self, path: &str) -> Vec<u8>;
+
+    fn log(string: String);
+    fn elog(string: String);
 }

@@ -9,16 +9,27 @@ mod wasm_backend;
 use crate::backend::Backend;
 
 #[cfg(not(target_family = "wasm"))]
-type BackendType<'a, 'b> = SdlBackend<'a, 'b>;
+type BackendType<'a, 'b> = sdl_backend::SdlBackend<'a, 'b>;
 
 #[cfg(target_family = "wasm")]
-type BackendType = WasmBackend;
+type BackendType = wasm_backend::WasmBackend;
 
+#[cfg(target_family = "wasm")]
+macro_rules! println {
+     ($($arg:tt)*) => {
+         BackendType::log(::std::format!($($arg)*));
+     };
+ }
 
-use std::{io::Read, collections::HashMap};
+#[cfg(target_family = "wasm")]
+macro_rules! eprintln {
+     ($($arg:tt)*) => {
+         BackendType::elog(::std::format!($($arg)*));
+     };
+ }
 
+use std::collections::HashMap;
 use backend::{Color, Event, MouseButton};
-use sdl_backend::SdlBackend;
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Coord(char, usize);
@@ -1278,9 +1289,8 @@ fn fill_quadrilateral(backend: &mut BackendType, points: &[(i32, i32); 4]) {
 }
 
 
-fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
-    let mut backend = BackendType::new();
-
+fn main_loop(mut board: Board, textures: Vec<Vec<Image>>,
+             backend: &mut BackendType) {
     let mut mate = HashMap::new();
     mate.insert(Player::Green, false);
     mate.insert(Player::Red, false);
@@ -1433,10 +1443,10 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>) {
 
                     if f.typ == FieldType::BLACK {
                         backend.set_draw_color(Color::BLACK);
-                        fill_quadrilateral(&mut backend, &points);
+                        fill_quadrilateral(backend, &points);
                     }
                     backend.set_draw_color(Color::RED);
-                    draw_polygon(&mut backend, &points);
+                    draw_polygon(backend, &points);
 
                     let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
                     let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
@@ -1516,14 +1526,12 @@ pub struct Image {
     pub data: Vec<u8>,
 }
 
-fn load_textures() -> std::io::Result<Vec<Vec<Image>>> {
+fn load_textures(backend: &BackendType) -> std::io::Result<Vec<Vec<Image>>> {
     let mut vec = vec![];
     for c in COLOR_LETTERS {
         let mut inner_vec = vec![];
         for p in PIECE_LETTERS {
-            let mut f = std::fs::File::open(&format!("./assets/{p}{c}.png"))?;
-            let mut data = vec![];
-            f.read_to_end(&mut data)?;
+            let data = backend.read_file(&format!("./assets/{p}{c}.png"));
 
             inner_vec.push(Image {
                 data,
@@ -1535,10 +1543,18 @@ fn load_textures() -> std::io::Result<Vec<Vec<Image>>> {
 }
 
 fn main() {
+    std::panic::set_hook(Box::new(|i| {
+        eprintln!("{i}");
+    }));
+
     let mut board = Board::new();
+    println!("Hello, World!");
+
     board.place_pieces();
-    let textures = load_textures().unwrap();
+
+    let mut backend = BackendType::new();
+    let textures = load_textures(&backend).unwrap();
 
 //    println!("Board: {board:#?}");
-    main_loop(board, textures);
+    main_loop(board, textures, &mut backend);
 }

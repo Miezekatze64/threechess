@@ -1,3 +1,4 @@
+use std::io::Read;
 use crate::backend::{self, Color, Event, MouseButton};
 
 use sdl2::{render::{Canvas, TextureCreator}, video::{Window, WindowContext}, EventPump, ttf::{Font, Sdl2TtfContext}, rect::Rect};
@@ -133,5 +134,20 @@ impl<'a, 'b> backend::Backend for SdlBackend<'a, 'b> {
 
     fn present(&mut self) {
         self.canvas.present();
+    }
+
+    fn log(string: String) {
+        println!("{}", string);
+    }
+
+    fn elog(string: String) {
+        eprintln!("{}", string);
+    }
+
+    fn read_file(&self, path: &str) -> Vec<u8> {
+        let mut f = std::fs::File::open(path).unwrap();
+        let mut data = vec![];
+        f.read_to_end(&mut data).unwrap();
+        data
     }
 }
