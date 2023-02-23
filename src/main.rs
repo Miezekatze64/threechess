@@ -861,7 +861,7 @@ impl Field {
     }
 
     fn get_possible_moves(&self, board: &Board) -> Vec<Coord> {
-        self.get_possible_moves_unchecked(board)
+        let moves = self.get_possible_moves_unchecked(board)
             .into_iter().filter(|x| {
                 let mut new_board = board.clone();
                 new_board.get_field_mut(x.0, x.1)
@@ -873,7 +873,25 @@ impl Field {
                     None;
 
                 ! new_board.is_check(self.piece.unwrap().player)
-        }).collect()
+        }).collect::<Vec<_>>();
+
+
+        let mut king_capt_moves = vec![];
+        for mov in &moves {
+            let f = board.get_field(mov.0, mov.1).unwrap();
+            if let Some(p) = f.piece {
+                if p.player != self.piece.unwrap().player &&
+                    p.typ == PieceType::King {
+                        king_capt_moves.push(*mov);
+                }
+            }
+        }
+
+        if king_capt_moves.is_empty() {
+            moves
+        } else {
+            king_capt_moves
+        }
     }
 }
 
