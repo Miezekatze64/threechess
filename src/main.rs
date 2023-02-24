@@ -1288,46 +1288,42 @@ fn fill_quadrilateral(backend: &mut BackendType, points: &[(i32, i32); 4]) {
     }
 }
 
+#[export_name = "main_loop_step"]
+pub extern "C" fn main_loop_step() -> bool {
+    let board = unsafe{__BOARD.as_mut().unwrap()};
+    let textures = unsafe{__TEXTURES.as_ref().unwrap()};
+    let backend = unsafe{__BACKEND.as_mut().unwrap()};
+    let mate = unsafe{__MATE.as_mut().unwrap()};
 
-fn main_loop(mut board: Board, textures: Vec<Vec<Image>>,
-             backend: &mut BackendType) {
-    let mut mate = HashMap::new();
-    mate.insert(Player::Green, false);
-    mate.insert(Player::Red, false);
-    mate.insert(Player::Yellow, false);
+    backend.set_draw_color(Color::WHITE);
+    backend.clear();
 
-    'running: loop {
-        println!("HERE!!");
-        backend.set_draw_color(Color::WHITE);
-        backend.clear();
+    let ww = backend.win_size().0 as i32;
+    let wh = backend.win_size().1 as i32;
 
-        let ww = backend.win_size().0 as i32;
-        let wh = backend.win_size().1 as i32;
-
-        for e in backend.poll_event() {
-            match e {
-                Event::Quit => break 'running,
-                Event::MouseButtonUp(mouse_btn, x, y) => {
-                    println!("CLICK!");
-                    if mouse_btn == MouseButton::Left {
-                        let mut pressed_field = None;
-                        'out: for s in &board.sections {
-                            for yi in 0..4 {
-                                for xi in 0..4 {
-                                    let coords = s.get_coords(xi, yi, ww, wh);
-                                    if point_is_in_quadrilateral((x, y), &coords) {
-                                        pressed_field = Some(s.fields[xi][yi].coord);
-                                        break 'out;
-                                    }
+    for e in backend.poll_event() {
+        match e {
+            Event::Quit => return false,
+            Event::MouseButtonUp(mouse_btn, x, y) => {
+                if mouse_btn == MouseButton::Left {
+                    let mut pressed_field = None;
+                    'out: for s in &board.sections {
+                        for yi in 0..4 {
+                            for xi in 0..4 {
+                                let coords = s.get_coords(xi, yi, ww, wh);
+                                if point_is_in_quadrilateral((x, y), &coords) {
+                                    pressed_field = Some(s.fields[xi][yi].coord);
+                                    break 'out;
                                 }
                             }
                         }
+                    }
 
-                        if let Some(f) = pressed_field {
-                            let pf = board.get_field(f.0, f.1).unwrap();
-                            if board.active_field.is_some() &&
-                                ! (pf.piece.map_or(false, |x| x
-                                .player == board.current_player)) {
+                    if let Some(f) = pressed_field {
+                        let pf = board.get_field(f.0, f.1).unwrap();
+                        if board.active_field.is_some() &&
+                            ! (pf.piece.map_or(false, |x| x
+                                               .player == board.current_player)) {
                                 let af = board.active_field.unwrap();
 
                                 let possible_moves = af.get_possible_moves(&board);
@@ -1375,150 +1371,150 @@ fn main_loop(mut board: Board, textures: Vec<Vec<Image>>,
                                     }
                                 }
                             }
-                        }
                     }
-                },
-//                _ => (),
-            }
-        }
-
-        let string = format!("{}'s turn", board.current_player);
-        let (w, h) = backend.text_size(&string);
-        backend.render_text(&string, ww - w as i32 - 10, h as i32 + 5,
-                            match board.current_player {
-                                Player::Red => Color::RED,
-                                Player::Green => Color::GREEN,
-                                Player::Yellow => Color(0xff, 0xbf, 0x00),
-                            });
-
-        let mut yind = 1;
-        for player in [Player::Red, Player::Green, Player::Yellow] {
-            if ! board.is_check(player) {
-                continue;
-            }
-            let string = format!("{player} is in check");
-            backend.render_text(&string, 10, (h as i32 + 5) * yind,
-                            match board.current_player {
-                                Player::Red => Color::RED,
-                                Player::Green => Color::GREEN,
-                                Player::Yellow => Color(0xff, 0xbf, 0x00),
-                            });
-            yind += 1;
-        }
-
-        let mut mate_count = 0;
-        for (p, b) in &mate {
-            if !*b {
-                continue;
-            }
-            let string = format!("{p} is mate");
-            backend.render_text(&string, 10, (h as i32 + 5) * yind,
-                            match board.current_player {
-                                Player::Red => Color::RED,
-                                Player::Green => Color::GREEN,
-                                Player::Yellow => Color(0xff, 0xbf, 0x00),
-                            });
-            yind += 1;
-            mate_count += 1;
-        }
-
-        if mate_count == 2 {
-            let player = mate.iter().find(|(_p, a)| !*a)
-                                    .unwrap().0;
-
-            let string = format!("{player} has won");
-            backend.render_text(&string, 10, (h as i32 + 5) * yind,
-                            match board.current_player {
-                                Player::Red => Color::RED,
-                                Player::Green => Color::GREEN,
-                                Player::Yellow => Color(0xff, 0xbf, 0x00),
-                            });
-        }
-
-        for s in &board.sections {
-            for y in 0 .. 4 {
-                for x in 0 .. 4 {
-                    let points = s.get_coords(x, y, ww, wh);
-                    let f = s.fields[x][y];
-
-                    if f.typ == FieldType::BLACK {
-                        backend.set_draw_color(Color::BLACK);
-                        fill_quadrilateral(backend, &points);
-                    }
-                    backend.set_draw_color(Color::RED);
-                    draw_polygon(backend, &points);
-
-                    let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
-                    let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
-
-                    let st = format!("{}{}", ((s.start_file as u8 + x as u8) as char)
-                                     .to_uppercase(),
-                                     s.start_rank as i32 + y as i32);
-
-                    let (w, h) = backend.text_size(&st);
-                    backend.render_text(&st, mx - w as i32 / 2, my - h as i32 / 2,
-                            if f.typ == FieldType::BLACK {
-                            Color(0xdd, 0xdd, 0xdd)
-                        } else {
-                            Color(0x22, 0x22, 0x22)
-                        });
                 }
-            }
+            },
+            //                _ => (),
         }
+    }
 
-        if let Some(f) = board.active_field {
-            let active_fields = f.get_possible_moves(&board);
-            let coords: Vec<_> = active_fields.iter().flat_map(|f| board.get_coords(*f, ww, wh)).collect();
+    let string = format!("{}'s turn", board.current_player);
+    let (w, h) = backend.text_size(&string);
+    backend.render_text(&string, ww - w as i32 - 10, h as i32 + 5,
+                        match board.current_player {
+                            Player::Red => Color::RED,
+                            Player::Green => Color::GREEN,
+                            Player::Yellow => Color(0xff, 0xbf, 0x00),
+                        });
 
-            for points in coords {
-                backend.set_draw_color(
-                    [Color::RED, Color::GREEN, Color::YELLOW][board.current_player as usize]
-                );
+    let mut yind = 1;
+    for player in [Player::Red, Player::Green, Player::Yellow] {
+        if ! board.is_check(player) {
+            continue;
+        }
+        let string = format!("{player} is in check");
+        backend.render_text(&string, 10, (h as i32 + 5) * yind,
+                            match board.current_player {
+                                Player::Red => Color::RED,
+                                Player::Green => Color::GREEN,
+                                Player::Yellow => Color(0xff, 0xbf, 0x00),
+                            });
+        yind += 1;
+    }
+
+    let mut mate_count = 0;
+    for (p, b) in mate.iter() {
+        if !*b {
+            continue;
+        }
+        let string = format!("{p} is mate");
+        backend.render_text(&string, 10, (h as i32 + 5) * yind,
+                            match board.current_player {
+                                Player::Red => Color::RED,
+                                Player::Green => Color::GREEN,
+                                Player::Yellow => Color(0xff, 0xbf, 0x00),
+                            });
+        yind += 1;
+        mate_count += 1;
+    }
+
+    if mate_count == 2 {
+        let player = mate.iter().find(|(_p, a)| !*a)
+                                .unwrap().0;
+
+        let string = format!("{player} has won");
+        backend.render_text(&string, 10, (h as i32 + 5) * yind,
+                            match board.current_player {
+                                Player::Red => Color::RED,
+                                Player::Green => Color::GREEN,
+                                Player::Yellow => Color(0xff, 0xbf, 0x00),
+                            });
+    }
+
+    for s in &board.sections {
+        for y in 0 .. 4 {
+            for x in 0 .. 4 {
+                let points = s.get_coords(x, y, ww, wh);
+                let f = s.fields[x][y];
+
+                if f.typ == FieldType::BLACK {
+                    backend.set_draw_color(Color::BLACK);
+                    fill_quadrilateral(backend, &points);
+                }
+                backend.set_draw_color(Color::RED);
+                draw_polygon(backend, &points);
+
                 let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
                 let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
 
-                let r = ww.min(wh) / 40;
+                let st = format!("{}{}", ((s.start_file as u8 + x as u8) as char)
+                                 .to_uppercase(),
+                                 s.start_rank as i32 + y as i32);
 
-                for rx in (mx-r) ..= (mx+r) {
-                    for ry in (my-r) ..= (my+r) {
-                        let x = rx - mx;
-                        let y = ry - my;
-
-                        if x * x + y * y < r * r {
-                            backend.draw_point(rx, ry);
-                        }
-                    }
-                }
+                let (w, h) = backend.text_size(&st);
+                backend.render_text(&st, mx - w as i32 / 2, my - h as i32 / 2,
+                                    if f.typ == FieldType::BLACK {
+                                        Color(0xdd, 0xdd, 0xdd)
+                                    } else {
+                                        Color(0x22, 0x22, 0x22)
+                                    });
             }
         }
-
-        for s in board.sections {
-            for y in 0 .. 4 {
-                for x in 0 .. 4 {
-                    let points = s.get_coords(x, y, ww, wh);
-                    let f = s.fields[x][y];
-                    let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
-                    let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
-
-                    if let Some(p) = f.piece {
-                        let color = p.player as usize;
-                        let piece = p.typ as usize;
-
-                        let texture = &textures[color][piece];
-
-                        let (_, height) = s.get_radius_and_height(ww, wh);
-
-                        let w = height / 6;
-                        let h = w;
-
-                        backend.render_png_data(&texture.data,
-                                                mx - w / 2, my - h / 2, w, h);
-                    }
-                }
-            }
-        }
-        backend.present();
     }
+
+    if let Some(f) = board.active_field {
+        let active_fields = f.get_possible_moves(&board);
+        let coords: Vec<_> = active_fields.iter().flat_map(|f| board.get_coords(*f, ww, wh)).collect();
+
+        for points in coords {
+            backend.set_draw_color(
+                [Color::RED, Color::GREEN, Color::YELLOW][board.current_player as usize]
+            );
+            let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
+            let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
+
+            let r = ww.min(wh) / 40;
+
+            for rx in (mx-r) ..= (mx+r) {
+                for ry in (my-r) ..= (my+r) {
+                    let x = rx - mx;
+                    let y = ry - my;
+
+                    if x * x + y * y < r * r {
+                        backend.draw_point(rx, ry);
+                    }
+                }
+            }
+        }
+    }
+
+    for s in board.sections {
+        for y in 0 .. 4 {
+            for x in 0 .. 4 {
+                let points = s.get_coords(x, y, ww, wh);
+                let f = s.fields[x][y];
+                let mx = (points[0].0 + points[1].0 + points[2].0 + points[3].0) / 4;
+                let my = (points[0].1 + points[1].1 + points[2].1 + points[3].1) / 4;
+
+                if let Some(p) = f.piece {
+                    let color = p.player as usize;
+                    let piece = p.typ as usize;
+
+                    let texture = &textures[color][piece];
+
+                    let (_, height) = s.get_radius_and_height(ww, wh);
+
+                    let w = height / 6;
+                    let h = w;
+
+                    backend.render_png_data(&texture.data,
+                                            mx - w / 2, my - h / 2, w, h);
+                }
+            }
+        }
+    }
+    backend.present();
+    true
 }
 
 #[derive(Debug)]
@@ -1542,19 +1538,32 @@ fn load_textures(backend: &BackendType) -> std::io::Result<Vec<Vec<Image>>> {
     Ok(vec)
 }
 
-fn main() {
+static mut __BOARD: Option<Board> = None;
+static mut __TEXTURES: Option<Vec<Vec<Image>>> = None;
+static mut __BACKEND: Option<BackendType> = None;
+static mut __MATE: Option<HashMap<Player, bool>> = None;
+
+#[export_name = "init"]
+pub extern "C" fn init() {
     std::panic::set_hook(Box::new(|i| {
         eprintln!("{i}");
     }));
 
-    let mut board = Board::new();
-    println!("Hello, World!");
+    unsafe{__BOARD = Some(Board::new())};
+    unsafe{__BOARD.as_mut().unwrap()}.place_pieces();
 
-    board.place_pieces();
+    unsafe {__BACKEND = Some(BackendType::new())};
+    unsafe {__TEXTURES = Some(load_textures(__BACKEND.as_ref().unwrap()).unwrap())};
 
-    let mut backend = BackendType::new();
-    let textures = load_textures(&backend).unwrap();
+    unsafe{__MATE = Some(HashMap::new())};
+    let mate = unsafe{__MATE.as_mut().unwrap()};
+    mate.insert(Player::Green, false);
+    mate.insert(Player::Red, false);
+    mate.insert(Player::Yellow, false);
 
-//    println!("Board: {board:#?}");
-    main_loop(board, textures, &mut backend);
+}
+
+fn main() {
+    init();
+    while main_loop_step() {};
 }
