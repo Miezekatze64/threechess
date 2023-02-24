@@ -1,4 +1,4 @@
-const PATH = './target/wasm32-unknown-unknown/release/threechess.wasm';
+const PATH = './threechess.wasm';
 var exports;
 
 var ctx = document.getElementById('canvas').getContext('2d');
